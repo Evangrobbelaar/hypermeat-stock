@@ -23,22 +23,16 @@ any time, and there is a defensible record of who accepted what.
 
 ## Deploy on the VPS
 
-One command on the VPS:
+The repo is private, so the first clone needs your GitHub token:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Evangrobbelaar/hypermeat-stock/main/deploy.sh | bash
+git clone https://Evangrobbelaar:YOUR_PAT@github.com/Evangrobbelaar/hypermeat-stock.git /opt/hypermeat-stock
+cd /opt/hypermeat-stock && bash deploy.sh
 ```
 
-It clones to `/opt/hypermeat-stock`, builds, starts the container, waits for health,
-and prints the tablet URL. Re-running it pulls the latest and redeploys.
-
-Manual equivalent:
-
-```bash
-git clone https://github.com/Evangrobbelaar/hypermeat-stock.git /opt/hypermeat-stock
-cd /opt/hypermeat-stock
-docker compose up -d --build
-```
+`deploy.sh` builds the image, starts the container, waits for the health check to
+pass, runs a smoke test and prints the tablet URL. To update later, just
+`cd /opt/hypermeat-stock && bash deploy.sh` again — it pulls and redeploys.
 
 Serves on port **8100**. Check it: `curl localhost:8100/healthz`
 

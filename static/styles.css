@@ -1,0 +1,164 @@
+:root{
+  --paper:#e6e9e9;
+  --panel:#fff;
+  --ink:#14181a;
+  --steel:#5d686e;
+  --line:#c2c8ca;
+  --accept:#15694a;
+  --accept-press:#0f5138;
+  --alert:#9e2a1f;
+  --tap:64px;
+  --pad:16px;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-variant-numeric:tabular-nums;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:var(--paper);color:var(--ink);
+  font-size:17px;line-height:1.4;
+  overscroll-behavior:none;
+}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+
+/* ---------- PIN gate ---------- */
+.gate{
+  position:fixed;inset:0;z-index:20;
+  background:var(--ink);color:#eef1f1;
+  display:grid;place-items:center;padding:var(--pad);
+}
+.gate-inner{width:min(420px,100%);text-align:center}
+.gate-site{margin:0;color:#8fa0a6;font-size:15px;letter-spacing:.02em}
+.gate-title{margin:2px 0 6px;font-size:34px;font-weight:650;letter-spacing:-.02em}
+.gate-hint{margin:0 0 26px;color:#8fa0a6;font-size:15px}
+.pin-dots{display:flex;gap:14px;justify-content:center;margin-bottom:22px}
+.pin-dots i{width:15px;height:15px;border:2px solid #6d7d84;border-radius:50%}
+.pin-dots i.on{background:#eef1f1;border-color:#eef1f1}
+.gate-error{color:#f0a49c;margin:0 0 14px;font-size:15px}
+.keypad-pin button{
+  background:#20272a;border:1px solid #313c40;color:#eef1f1;
+}
+.keypad-pin button:active{background:#2c3639}
+
+/* ---------- keypads ---------- */
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.keypad button{
+  height:var(--tap);border-radius:4px;font-size:24px;font-weight:600;
+  background:var(--panel);border:1px solid var(--line);
+}
+.keypad button:active{background:#dfe4e5}
+.k-wide{font-size:17px !important;font-weight:500 !important}
+
+/* ---------- chrome ---------- */
+.bar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px var(--pad);background:var(--ink);color:#eef1f1;
+  padding-top:calc(10px + env(safe-area-inset-top));
+}
+.bar-label{display:block;font-size:12px;color:#8fa0a6}
+.bar strong{font-size:17px;font-weight:600}
+.ghost{
+  background:none;border:1px solid currentColor;border-radius:4px;
+  padding:9px 14px;font-size:15px;
+}
+.ghost.small{padding:6px 10px;font-size:14px}
+
+main{padding:var(--pad);padding-bottom:104px}
+.view{max-width:640px;margin:0 auto}
+.section-head{font-size:14px;font-weight:600;color:var(--steel);margin:26px 0 8px}
+
+.tabs{
+  position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(4,1fr);
+  background:var(--panel);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.tabs button{
+  background:none;border:0;padding:16px 4px;font-size:15px;color:var(--steel);
+  border-top:3px solid transparent;margin-top:-1px;
+}
+.tabs button.on{color:var(--ink);font-weight:600;border-top-color:var(--ink)}
+
+/* ---------- fields ---------- */
+.field{display:block;margin-bottom:14px}
+.field>span{display:block;font-size:14px;color:var(--steel);margin-bottom:6px}
+.field em{font-style:normal;color:var(--line)}
+.field input,.field select{
+  width:100%;height:52px;padding:0 12px;
+  background:var(--panel);border:1px solid var(--line);border-radius:4px;
+}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:var(--pad)}
+.panel h2{margin:0 0 14px;font-size:19px;font-weight:650}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{
+  min-width:66px;height:48px;border-radius:4px;
+  background:var(--panel);border:1px solid var(--line);
+}
+.chips button.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+
+/* ---------- lists ---------- */
+.rows{list-style:none;margin:0;padding:0;background:var(--panel);border:1px solid var(--line);border-radius:4px}
+.rows:empty{display:none}
+.rows li{display:flex;align-items:center;gap:12px;padding:14px var(--pad);border-bottom:1px solid var(--line)}
+.rows li:last-child{border-bottom:0}
+.rows button.row{
+  display:flex;width:100%;align-items:center;gap:12px;
+  padding:16px var(--pad);background:none;border:0;border-bottom:1px solid var(--line);text-align:left;
+}
+.rows li:last-child button.row{border-bottom:0}
+.rows button.row:active{background:#eff2f2}
+.row-main{flex:1;min-width:0}
+.row-main strong{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{display:block;font-size:14px;color:var(--steel)}
+.qty{font-size:21px;font-weight:650;white-space:nowrap}
+.qty span{font-size:14px;font-weight:500;color:var(--steel);margin-left:3px}
+.struck{text-decoration:line-through;color:var(--steel)}
+.empty{color:var(--steel);padding:20px 0;text-align:center}
+
+/* ---------- picked product ---------- */
+.picked{
+  position:relative;background:var(--ink);color:#eef1f1;
+  border-radius:4px;padding:14px 88px 14px var(--pad);margin-bottom:16px;
+}
+.picked strong{display:block;font-size:19px;font-weight:600}
+.picked .meta{color:#8fa0a6}
+.picked .ghost{position:absolute;right:12px;top:50%;transform:translateY(-50%)}
+
+/* ---------- scale readout ---------- */
+.readout{
+  display:flex;align-items:baseline;justify-content:flex-end;gap:8px;
+  background:var(--panel);border:1px solid var(--line);border-radius:4px;
+  padding:18px var(--pad);margin-bottom:12px;
+}
+.readout output{font-size:56px;font-weight:650;letter-spacing:-.03em;line-height:1}
+.readout-unit{font-size:20px;color:var(--steel)}
+
+.extras{margin:14px 0;border-top:1px solid var(--line);padding-top:12px}
+.extras summary{color:var(--steel);font-size:15px;padding:8px 0}
+.extras[open] summary{margin-bottom:10px}
+
+.accept{
+  width:100%;height:var(--tap);border:0;border-radius:4px;
+  background:var(--accept);color:#fff;font-size:19px;font-weight:650;
+}
+.accept:active{background:var(--accept-press)}
+.accept:disabled{background:#b4bcbe;color:#eef1f1}
+
+.toast{
+  position:fixed;left:50%;bottom:96px;transform:translateX(-50%);
+  background:var(--ink);color:#eef1f1;padding:14px 20px;border-radius:4px;
+  font-size:16px;z-index:30;max-width:calc(100% - 32px);
+}
+.toast.bad{background:var(--alert)}
+
+@media (min-width:720px){
+  :root{--tap:72px}
+  .readout output{font-size:68px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .toast{animation:rise .16s ease-out}
+  @keyframes rise{from{opacity:0;transform:translate(-50%,8px)}}
+}

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#14181a">
+<title>Goods Received &middot; Hyper Meat</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<!-- PIN gate -->
+<section id="gate" class="gate">
+  <div class="gate-inner">
+    <p class="gate-site">Hyper Meat Randfontein</p>
+    <h1 class="gate-title">Goods received</h1>
+    <p class="gate-hint">Enter your PIN to start capturing.</p>
+    <div id="pinDots" class="pin-dots"><i></i><i></i><i></i><i></i></div>
+    <p id="gateError" class="gate-error" hidden></p>
+    <div class="keypad keypad-pin">
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button class="k-wide" data-k="clear">Clear</button><button data-k="0">0</button>
+      <button data-k="back">&#9003;</button>
+    </div>
+  </div>
+</section>
+
+<!-- App -->
+<div id="app" hidden>
+  <header class="bar">
+    <div>
+      <span class="bar-label">Signed in</span>
+      <strong id="opName">&mdash;</strong>
+    </div>
+    <button id="signOut" class="ghost">Sign out</button>
+  </header>
+
+  <main>
+    <!-- RECEIVE -->
+    <section id="view-receive" class="view">
+      <div class="picked" id="picked" hidden>
+        <button id="changeProduct" class="ghost small">Change</button>
+        <strong id="pickedName">&mdash;</strong>
+        <span id="pickedMeta" class="meta"></span>
+      </div>
+
+      <div id="chooser">
+        <label class="field">
+          <span>Product</span>
+          <input id="search" type="search" placeholder="Type to find a product" autocomplete="off">
+        </label>
+        <ul id="results" class="rows"></ul>
+        <p class="empty" id="noProducts" hidden>
+          No products yet. Add the first one on the Products tab.
+        </p>
+      </div>
+
+      <div id="capture" hidden>
+        <div class="readout">
+          <output id="qty">0</output>
+          <span id="qtyUnit" class="readout-unit">kg</span>
+        </div>
+
+        <div class="keypad keypad-qty">
+          <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+          <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+          <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+          <button data-k=".">.</button><button data-k="0">0</button>
+          <button data-k="back">&#9003;</button>
+        </div>
+
+        <details class="extras">
+          <summary>Delivery details</summary>
+          <label class="field"><span>Supplier</span><input id="supplier" autocomplete="off"></label>
+          <label class="field"><span>Delivery note number</span><input id="reference" autocomplete="off"></label>
+          <label class="field"><span>Store into</span>
+            <select id="locationPick"></select>
+          </label>
+          <label class="field"><span>Note</span><input id="note" autocomplete="off"></label>
+        </details>
+
+        <button id="accept" class="accept" disabled>Accept into stock</button>
+      </div>
+    </section>
+
+    <!-- PRODUCTS -->
+    <section id="view-products" class="view" hidden>
+      <form id="productForm" class="panel" autocomplete="off">
+        <h2>New product</h2>
+        <label class="field"><span>Title</span>
+          <input id="pName" required placeholder="Beef brisket, whole">
+        </label>
+        <label class="field"><span>Unit of measure</span>
+          <div id="unitPick" class="chips"></div>
+        </label>
+        <label class="field"><span>Storage location</span>
+          <select id="pLocation"></select>
+        </label>
+        <label class="field"><span>Till code <em>optional</em></span>
+          <input id="pCode" placeholder="Matches the weekly sales export">
+        </label>
+        <button class="accept" type="submit">Create product</button>
+      </form>
+
+      <h2 class="section-head">All products</h2>
+      <ul id="productList" class="rows"></ul>
+    </section>
+
+    <!-- STOCK -->
+    <section id="view-stock" class="view" hidden>
+      <h2 class="section-head">On hand</h2>
+      <ul id="stockList" class="rows"></ul>
+    </section>
+
+    <!-- LOG -->
+    <section id="view-log" class="view" hidden>
+      <h2 class="section-head">Received today and before</h2>
+      <ul id="logList" class="rows"></ul>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-view="receive" class="on">Receive</button>
+    <button data-view="products">Products</button>
+    <button data-view="stock">Stock</button>
+    <button data-view="log">Log</button>
+  </nav>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

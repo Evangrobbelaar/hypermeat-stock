@@ -1,0 +1,14 @@
+services:
+  stock:
+    build: .
+    container_name: hypermeat-stock
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    volumes:
+      - stock-data:/data
+    environment:
+      - STOCK_DB_PATH=/data/stock.db
+
+volumes:
+  stock-data:

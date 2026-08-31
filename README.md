@@ -23,9 +23,20 @@ any time, and there is a defensible record of who accepted what.
 
 ## Deploy on the VPS
 
+One command on the VPS:
+
 ```bash
-git clone https://github.com/Evangrobbelaar/hypermeat-stock.git
-cd hypermeat-stock
+curl -fsSL https://raw.githubusercontent.com/Evangrobbelaar/hypermeat-stock/main/deploy.sh | bash
+```
+
+It clones to `/opt/hypermeat-stock`, builds, starts the container, waits for health,
+and prints the tablet URL. Re-running it pulls the latest and redeploys.
+
+Manual equivalent:
+
+```bash
+git clone https://github.com/Evangrobbelaar/hypermeat-stock.git /opt/hypermeat-stock
+cd /opt/hypermeat-stock
 docker compose up -d --build
 ```
 

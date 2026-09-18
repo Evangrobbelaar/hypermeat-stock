@@ -9,6 +9,20 @@ services:
       - stock-data:/data
     environment:
       - STOCK_DB_PATH=/data/stock.db
+      - PUBLIC_BASE_URL=https://hyperstock.srv1695304.hstgr.cloud
+      # Xero/Sage developer-app credentials — empty until real ones are
+      # issued from each provider's developer portal. Connect stays
+      # refused with a clear message for a provider left blank.
+      - XERO_CLIENT_ID=
+      - XERO_CLIENT_SECRET=
+      - SAGE_CLIENT_ID=
+      - SAGE_CLIENT_SECRET=
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hypermeat-stock.entrypoints=websecure"
+      - "traefik.http.routers.hypermeat-stock.rule=Host(`hyperstock.srv1695304.hstgr.cloud`)"
+      - "traefik.http.routers.hypermeat-stock.tls.certresolver=letsencrypt"
+      - "traefik.http.services.hypermeat-stock.loadbalancer.server.port=8100"
 
 volumes:
   stock-data:

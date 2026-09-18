@@ -14,6 +14,9 @@
 }
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* Any element with the `hidden` attribute must actually disappear, even if a
+   more specific class rule (e.g. .gate{display:grid}) also sets `display`. */
+[hidden]{display:none!important}
 html,body{margin:0;height:100%}
 body{
   background:var(--paper);color:var(--ink);
@@ -35,13 +38,23 @@ button{cursor:pointer}
 .gate-title{margin:2px 0 6px;font-size:34px;font-weight:650;letter-spacing:-.02em}
 .gate-hint{margin:0 0 26px;color:#8fa0a6;font-size:15px}
 .pin-dots{display:flex;gap:14px;justify-content:center;margin-bottom:22px}
-.pin-dots i{width:15px;height:15px;border:2px solid #6d7d84;border-radius:50%}
+.pin-dots i{width:15px;height:15px;border:2px solid #6d7d84;border-radius:50%;display:block;transition:background .1s,border-color .1s}
 .pin-dots i.on{background:#eef1f1;border-color:#eef1f1}
-.gate-error{color:#f0a49c;margin:0 0 14px;font-size:15px}
+.pin-dots.shake{animation:shake .32s ease-in-out}
+.pin-dots.shake i{border-color:#f0a49c}
+.gate-error{color:#f0a49c;margin:0 0 14px;font-size:15px;font-weight:600}
 .keypad-pin button{
   background:#20272a;border:1px solid #313c40;color:#eef1f1;
 }
 .keypad-pin button:active{background:#2c3639}
+
+@keyframes shake{
+  0%,100%{transform:translateX(0)}
+  20%{transform:translateX(-8px)}
+  40%{transform:translateX(7px)}
+  60%{transform:translateX(-5px)}
+  80%{transform:translateX(3px)}
+}
 
 /* ---------- keypads ---------- */
 .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -60,23 +73,24 @@ button{cursor:pointer}
 }
 .bar-label{display:block;font-size:12px;color:#8fa0a6}
 .bar strong{font-size:17px;font-weight:600}
+.bar-actions{display:flex;align-items:center;gap:8px}
 .ghost{
   background:none;border:1px solid currentColor;border-radius:4px;
   padding:9px 14px;font-size:15px;
 }
 .ghost.small{padding:6px 10px;font-size:14px}
 
-main{padding:var(--pad);padding-bottom:104px}
+main{padding:var(--pad);padding-bottom:116px}
 .view{max-width:640px;margin:0 auto}
 .section-head{font-size:14px;font-weight:600;color:var(--steel);margin:26px 0 8px}
 
 .tabs{
-  position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(4,1fr);
+  position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(7,1fr);
   background:var(--panel);border-top:1px solid var(--line);
   padding-bottom:env(safe-area-inset-bottom);
 }
 .tabs button{
-  background:none;border:0;padding:16px 4px;font-size:15px;color:var(--steel);
+  background:none;border:0;padding:12px 1px;font-size:10px;line-height:1.2;color:var(--steel);
   border-top:3px solid transparent;margin-top:-1px;
 }
 .tabs button.on{color:var(--ink);font-weight:600;border-top-color:var(--ink)}
@@ -118,6 +132,20 @@ main{padding:var(--pad);padding-bottom:104px}
 .struck{text-decoration:line-through;color:var(--steel)}
 .empty{color:var(--steel);padding:20px 0;text-align:center}
 
+/* ---------- grouped list section header (Float items by location) ---------- */
+.rows li.list-section{
+  padding:8px var(--pad);background:var(--paper);font-size:13px;font-weight:650;
+  text-transform:uppercase;letter-spacing:.03em;color:var(--steel);
+}
+
+/* ---------- inline one-field editor (Dispatch actual-quantity, Float target) ---------- */
+.inline-editor{display:flex;align-items:center;gap:8px;margin-top:8px}
+.inline-editor input{
+  width:76px;height:40px;padding:0 8px;
+  background:var(--panel);border:1px solid var(--line);border-radius:4px;font-size:16px;
+}
+.qty.adjusted{color:var(--alert)}
+
 /* ---------- picked product ---------- */
 .picked{
   position:relative;background:var(--ink);color:#eef1f1;
@@ -147,6 +175,13 @@ main{padding:var(--pad);padding-bottom:104px}
 .accept:active{background:var(--accept-press)}
 .accept:disabled{background:#b4bcbe;color:#eef1f1}
 
+.bd-add{width:100%;height:52px;margin:14px 0}
+
+/* ---------- camera capture ---------- */
+.camera{margin-bottom:14px}
+.camera-preview{display:flex;align-items:center;gap:12px;margin:10px 0}
+.camera-preview .thumb{max-width:120px;max-height:120px;border-radius:4px;border:1px solid var(--line);display:block}
+
 .toast{
   position:fixed;left:50%;bottom:96px;transform:translateX(-50%);
   background:var(--ink);color:#eef1f1;padding:14px 20px;border-radius:4px;
@@ -161,4 +196,37 @@ main{padding:var(--pad);padding-bottom:104px}
 @media (prefers-reduced-motion:no-preference){
   .toast{animation:rise .16s ease-out}
   @keyframes rise{from{opacity:0;transform:translate(-50%,8px)}}
+}
+@media (prefers-reduced-motion:reduce){
+  .pin-dots.shake{animation:none}
+}
+
+/* ---------- print sheets (dispatch pick list / stock-take count sheet) ----------
+   Never visible on screen — populated with print-formatted markup right
+   before window.print() is called, then hidden again once printing is done
+   (or cancelled) via the browser's afterprint event. */
+.print-sheet{display:none}
+.print-header{margin-bottom:20px}
+.print-header h1{margin:0 0 4px;font-size:22px}
+.print-header p{margin:0;color:#444;font-size:14px}
+.print-section{margin-bottom:22px;break-inside:avoid}
+.print-section h2{
+  font-size:15px;margin:0 0 6px;padding-bottom:4px;
+  border-bottom:2px solid #000;
+}
+.print-table{width:100%;border-collapse:collapse;font-size:14px}
+.print-table th{
+  text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;
+  padding:4px 6px;border-bottom:1px solid #000;
+}
+.print-table td{padding:7px 6px;border-bottom:1px solid #ccc}
+.print-table tr{break-inside:avoid}
+.print-blank{
+  display:inline-block;min-width:70px;border-bottom:1px solid #000;
+}
+.print-hint{color:#888;font-size:11px}
+
+@media print{
+  body>*:not(.print-sheet){display:none!important}
+  .print-sheet{display:block!important;color:#000;background:#fff;padding:0}
 }

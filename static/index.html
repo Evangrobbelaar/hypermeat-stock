@@ -14,7 +14,7 @@
   <div class="gate-inner">
     <p class="gate-site">Hyper Meat Randfontein</p>
     <h1 class="gate-title">Goods received</h1>
-    <p class="gate-hint">Enter your PIN to start capturing.</p>
+    <p class="gate-hint">Enter your PIN to start capturing. You can type it or tap it.</p>
     <div id="pinDots" class="pin-dots"><i></i><i></i><i></i><i></i></div>
     <p id="gateError" class="gate-error" hidden></p>
     <div class="keypad keypad-pin">
@@ -34,55 +34,287 @@
       <span class="bar-label">Signed in</span>
       <strong id="opName">&mdash;</strong>
     </div>
-    <button id="signOut" class="ghost">Sign out</button>
+    <div class="bar-actions">
+      <button id="settingsBtn" class="ghost small">Settings</button>
+      <button id="signOut" class="ghost">Sign out</button>
+    </div>
   </header>
 
   <main>
     <!-- RECEIVE -->
     <section id="view-receive" class="view">
-      <div class="picked" id="picked" hidden>
-        <button id="changeProduct" class="ghost small">Change</button>
-        <strong id="pickedName">&mdash;</strong>
-        <span id="pickedMeta" class="meta"></span>
-      </div>
-
-      <div id="chooser">
-        <label class="field">
-          <span>Product</span>
-          <input id="search" type="search" placeholder="Type to find a product" autocomplete="off">
-        </label>
-        <ul id="results" class="rows"></ul>
-        <p class="empty" id="noProducts" hidden>
-          No products yet. Add the first one on the Products tab.
-        </p>
-      </div>
-
-      <div id="capture" hidden>
-        <div class="readout">
-          <output id="qty">0</output>
-          <span id="qtyUnit" class="readout-unit">kg</span>
+      <div id="recWizard">
+        <div class="picked" id="recCancelBar" hidden>
+          <button id="recCancel" class="ghost small">Cancel</button>
+          <strong>Adding a product</strong>
         </div>
 
-        <div class="keypad keypad-qty">
-          <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
-          <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
-          <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
-          <button data-k=".">.</button><button data-k="0">0</button>
-          <button data-k="back">&#9003;</button>
+        <div id="recPickZone">
+          <p class="section-head" id="recPickLabel">What are you receiving?</p>
+          <label class="field">
+            <span>Product</span>
+            <input id="search" type="search" placeholder="Type to find a product" autocomplete="off">
+          </label>
+          <ul id="results" class="rows"></ul>
+          <p class="empty" id="noProducts" hidden>
+            No products yet. Add the first one on the Products tab.
+          </p>
         </div>
+
+        <div id="recQtyZone" hidden>
+          <p class="section-head" id="recQtyLabel">How much came in?</p>
+          <div class="readout">
+            <output id="qty">0</output>
+            <span id="qtyUnit" class="readout-unit">kg</span>
+          </div>
+
+          <div class="keypad keypad-qty">
+            <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+            <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+            <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+            <button data-k=".">.</button><button data-k="0">0</button>
+            <button data-k="back">&#9003;</button>
+          </div>
+
+          <label class="field"><span>Store into</span>
+            <select id="locationPick"></select>
+          </label>
+          <label class="field"><span>Cost per <span id="unitCostLabel">unit</span> <em>optional</em></span>
+            <input id="unitCost" type="number" step="0.01" min="0" inputmode="decimal" placeholder="e.g. 45.50">
+          </label>
+
+          <button id="recQtyConfirm" class="accept" disabled>Add to delivery</button>
+        </div>
+      </div>
+
+      <div id="recSummary" hidden>
+        <div class="picked">
+          <button id="recStartOver" class="ghost small">Start over</button>
+          <strong>Receiving</strong>
+          <span id="recSummaryMeta" class="meta"></span>
+        </div>
+
+        <h2 class="section-head">Items in this delivery</h2>
+        <ul id="recItemList" class="rows"></ul>
+        <p class="empty" id="recNoItems">Nothing added yet.</p>
+        <button id="recAddAnother" class="ghost bd-add">+ Add another product</button>
 
         <details class="extras">
           <summary>Delivery details</summary>
           <label class="field"><span>Supplier</span><input id="supplier" autocomplete="off"></label>
           <label class="field"><span>Delivery note number</span><input id="reference" autocomplete="off"></label>
-          <label class="field"><span>Store into</span>
-            <select id="locationPick"></select>
-          </label>
           <label class="field"><span>Note</span><input id="note" autocomplete="off"></label>
         </details>
 
-        <button id="accept" class="accept" disabled>Accept into stock</button>
+        <div id="recPhoto" class="camera">
+          <p class="meta">Invoice photo (optional)</p>
+          <button type="button" class="ghost bd-add" id="recPhotoTake">Take photo</button>
+          <div class="camera-preview" id="recPhotoPreview" hidden>
+            <img id="recPhotoImg" class="thumb" alt="Photo preview">
+            <button type="button" class="ghost small" id="recPhotoRetake">Retake</button>
+          </div>
+          <input type="file" accept="image/*" capture="environment" id="recPhotoFile" hidden>
+          <p class="meta" id="recPhotoStatus"></p>
+        </div>
+
+        <button id="accept" class="accept" disabled>Accept delivery</button>
       </div>
+    </section>
+
+    <!-- DISPATCH: send stock out for processing. Deducted the moment the
+         list is sent; nothing downstream (breakdown, waste) is tracked. -->
+    <section id="view-dispatch" class="view" hidden>
+      <div id="dispWizard">
+        <div class="picked" id="dispCancelBar" hidden>
+          <button id="dispCancel" class="ghost small">Cancel</button>
+          <strong>Adding a product</strong>
+        </div>
+
+        <div id="dispPickZone">
+          <p class="section-head" id="dispPickLabel">What do you want sent out?</p>
+          <label class="field">
+            <span>Product</span>
+            <input id="dispSearch" type="search" placeholder="Type to find a product" autocomplete="off">
+          </label>
+          <ul id="dispResults" class="rows"></ul>
+        </div>
+
+        <div id="dispQtyZone" hidden>
+          <p class="section-head" id="dispQtyLabel">How much?</p>
+          <p class="meta" id="dispOnHandLine"></p>
+          <div class="readout">
+            <output id="dispQty">0</output>
+            <span id="dispQtyUnit" class="readout-unit">kg</span>
+          </div>
+          <div class="keypad keypad-dispqty">
+            <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+            <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+            <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+            <button data-k=".">.</button><button data-k="0">0</button>
+            <button data-k="back">&#9003;</button>
+          </div>
+          <button id="dispQtyConfirm" class="accept" disabled>Add to list</button>
+        </div>
+      </div>
+
+      <div id="dispSummary" hidden>
+        <div class="picked">
+          <button id="dispStartOver" class="ghost small">Start over</button>
+          <strong>Dispatch list</strong>
+          <span id="dispSummaryMeta" class="meta"></span>
+        </div>
+
+        <h2 class="section-head">Items to send</h2>
+        <ul id="dispItemList" class="rows"></ul>
+        <p class="empty" id="dispNoItems">Nothing added yet.</p>
+        <button id="dispAddAnother" class="ghost bd-add">+ Add another product</button>
+
+        <details class="extras">
+          <summary>Note <em>optional</em></summary>
+          <label class="field"><span>Note</span><input id="dispNote" autocomplete="off"></label>
+        </details>
+
+        <button id="dispSend" class="accept" disabled>Send list</button>
+      </div>
+
+      <div id="dispDetail" hidden>
+        <div class="picked">
+          <button id="dispDetailBack" class="ghost small">Back</button>
+          <strong>Dispatch #<span id="dispDetailId"></span></strong>
+          <span id="dispDetailMeta" class="meta"></span>
+        </div>
+        <p class="meta">Tap an item to correct the amount actually taken, if it
+          differs from what was requested.</p>
+        <ul id="dispDetailList" class="rows"></ul>
+        <button id="dispPrintBtn" class="ghost bd-add">Print pick list</button>
+      </div>
+
+      <h2 class="section-head">Past dispatches</h2>
+      <ul id="dispHistoryList" class="rows"></ul>
+    </section>
+
+    <!-- STOCK TAKE -->
+    <section id="view-stocktake" class="view" hidden>
+      <div id="stWizard">
+        <div class="picked" id="stCancelBar" hidden>
+          <button id="stCancel" class="ghost small">Cancel</button>
+          <strong>Counting a product</strong>
+        </div>
+
+        <div id="stPickZone">
+          <button type="button" id="stPrintBtn" class="ghost bd-add">Print count sheet</button>
+          <p class="section-head">What are you counting?</p>
+          <label class="field">
+            <span>Product</span>
+            <input id="stSearch" type="search" placeholder="Type to find a product" autocomplete="off">
+          </label>
+          <ul id="stResults" class="rows"></ul>
+        </div>
+
+        <div id="stQtyZone" hidden>
+          <p class="section-head" id="stQtyLabel">How much is actually on the shelf?</p>
+          <div class="readout">
+            <output id="stQty">0</output>
+            <span id="stQtyUnit" class="readout-unit">kg</span>
+          </div>
+          <p class="meta" id="stWasLine"></p>
+          <div class="keypad keypad-stqty">
+            <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+            <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+            <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+            <button data-k=".">.</button><button data-k="0">0</button>
+            <button data-k="back">&#9003;</button>
+          </div>
+          <button id="stConfirm" class="accept">Confirm count</button>
+        </div>
+      </div>
+
+      <div id="stList" hidden>
+        <h2 class="section-head">Counted so far</h2>
+        <ul id="stCountedList" class="rows"></ul>
+        <p class="empty" id="stNoCounts" hidden>Nothing counted yet.</p>
+        <button id="stAddAnother" class="ghost bd-add">+ Count another product</button>
+        <button id="stFinish" class="accept" disabled>Finish stock take</button>
+      </div>
+    </section>
+
+    <!-- FLOAT: packed items kept in the freezer overnight to restock shelves
+         each morning (e.g. "Beef stew, 69-size tray"). Fully separate from
+         the rest of the system — no location, no cost, no ledger effect.
+         Each morning is its own fresh count; there's nothing to reset. -->
+    <section id="view-float" class="view" hidden>
+      <div id="floatWizard">
+        <div class="picked" id="floatCancelBar" hidden>
+          <button id="floatCancel" class="ghost small">Cancel</button>
+          <strong>Counting an item</strong>
+        </div>
+
+        <div id="floatPickZone">
+          <button type="button" id="floatPrintSheetBtn" class="ghost bd-add">Print count sheet</button>
+          <p class="section-head">What are you counting?</p>
+          <ul id="floatPickList" class="rows"></ul>
+          <p class="empty" id="floatNoProducts" hidden>
+            No float items yet. Add the first one below.
+          </p>
+        </div>
+
+        <div id="floatQtyZone" hidden>
+          <p class="section-head" id="floatQtyLabel">How many crates are there?</p>
+          <div class="readout">
+            <output id="floatQty">0</output>
+            <span class="readout-unit">crates</span>
+          </div>
+          <div class="keypad keypad-floatqty">
+            <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+            <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+            <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+            <button data-k="0">0</button><button data-k="back">&#9003;</button>
+          </div>
+          <button id="floatQtyConfirm" class="accept">Add to count</button>
+        </div>
+      </div>
+
+      <div id="floatList" hidden>
+        <h2 class="section-head">Counted so far</h2>
+        <ul id="floatCountedList" class="rows"></ul>
+        <p class="empty" id="floatNoCounts" hidden>Nothing counted yet.</p>
+        <button id="floatAddAnother" class="ghost bd-add">+ Count another item</button>
+        <button id="floatFinish" class="accept" disabled>Finish count</button>
+      </div>
+
+      <div id="floatReview" hidden>
+        <div class="picked">
+          <button id="floatReviewNew" class="ghost small">New count</button>
+          <strong id="floatReviewTitle">Today's float</strong>
+          <span id="floatReviewMeta" class="meta"></span>
+        </div>
+        <ul id="floatReviewList" class="rows"></ul>
+        <button id="floatPrintPackBtn" class="ghost bd-add">Print pack list</button>
+      </div>
+
+      <h2 class="section-head">Past counts</h2>
+      <ul id="floatHistoryList" class="rows"></ul>
+
+      <details class="extras" id="floatManage">
+        <summary>Manage float items</summary>
+        <form id="floatProductForm" autocomplete="off">
+          <label class="field"><span>Item name</span>
+            <input id="floatNewName" placeholder="e.g. Beef stew, 69-size tray">
+          </label>
+          <label class="field"><span>Where it's counted</span>
+            <div id="floatLocationPick" class="chips"></div>
+          </label>
+          <label class="field"><span>Items per crate <em>optional</em></span>
+            <input id="floatNewUnitsPerCrate" type="number" step="1" min="1" inputmode="numeric" placeholder="e.g. 40">
+          </label>
+          <label class="field"><span>Target level, in crates <em>optional</em></span>
+            <input id="floatNewTarget" type="number" step="1" min="0" inputmode="numeric" placeholder="e.g. 40">
+          </label>
+          <button class="accept" type="submit">Add float item</button>
+        </form>
+        <h2 class="section-head">All float items</h2>
+        <ul id="floatProductList" class="rows"></ul>
+      </details>
     </section>
 
     <!-- PRODUCTS -->
@@ -104,6 +336,19 @@
         <button class="accept" type="submit">Create product</button>
       </form>
 
+      <details class="extras">
+        <summary>Add a storage location</summary>
+        <form id="locationForm" autocomplete="off">
+          <label class="field"><span>Name</span>
+            <input id="locName" placeholder="e.g. Freezer 2">
+          </label>
+          <label class="field"><span>Kind</span>
+            <div id="locKindPick" class="chips"></div>
+          </label>
+          <button class="accept" type="submit">Add location</button>
+        </form>
+      </details>
+
       <h2 class="section-head">All products</h2>
       <ul id="productList" class="rows"></ul>
     </section>
@@ -119,17 +364,47 @@
       <h2 class="section-head">Received today and before</h2>
       <ul id="logList" class="rows"></ul>
     </section>
+
+    <!-- ANALYTICS -->
+    <section id="view-analytics" class="view" hidden>
+      <button type="button" id="viewLogBtn" class="ghost bd-add">View full log</button>
+
+      <h2 class="section-head">Overview</h2>
+      <ul id="anStats" class="rows"></ul>
+
+      <h2 class="section-head">Most valuable stock</h2>
+      <ul id="anTopProducts" class="rows"></ul>
+
+      <h2 class="section-head">Top suppliers</h2>
+      <ul id="anTopSuppliers" class="rows"></ul>
+    </section>
+
+    <!-- SETTINGS (opened from the header, not the tab bar) -->
+    <section id="view-settings" class="view" hidden>
+      <h2 class="section-head">Accounting integrations</h2>
+      <p class="meta">Connect this site to your accounting system so what's received
+        can be pushed there as a bill. A provider only shows as ready once its
+        Client ID and Secret have been set up on the server.</p>
+      <ul id="integrationsList" class="rows"></ul>
+    </section>
   </main>
 
   <nav class="tabs">
     <button data-view="receive" class="on">Receive</button>
+    <button data-view="dispatch">Dispatch</button>
+    <button data-view="stocktake">Stock take</button>
+    <button data-view="float">Float</button>
     <button data-view="products">Products</button>
     <button data-view="stock">Stock</button>
-    <button data-view="log">Log</button>
+    <button data-view="analytics">Analytics</button>
   </nav>
 </div>
 
 <div id="toast" class="toast" hidden></div>
+
+<!-- Populated just before window.print() with either a dispatch pick list
+     or a stock-take count sheet; @media print hides everything else. -->
+<div id="printSheet" class="print-sheet"></div>
 
 <script src="/static/app.js"></script>
 </body>

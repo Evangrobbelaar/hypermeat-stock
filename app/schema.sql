@@ -18,6 +18,19 @@ CREATE TABLE IF NOT EXISTS location (
     created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
+-- A business that supplies stock (e.g. a wholesaler or abattoir). Kept as its
+-- own table (rather than a free-text field on product/movement) so a name
+-- typed once can be selected consistently ever after, and so analytics can
+-- group spend by supplier exactly instead of by whatever text was typed that
+-- day. movement.supplier (free text) predates this table and stays in place
+-- for history; new receipts set both.
+CREATE TABLE IF NOT EXISTS supplier (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL UNIQUE,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS product (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     code          TEXT    UNIQUE,                    -- till/PLU code, used to match weekly sales in phase 2
@@ -27,6 +40,7 @@ CREATE TABLE IF NOT EXISTS product (
     kind          TEXT    NOT NULL DEFAULT 'stock',  -- stock | packaging
     cost_price    REAL,                              -- current weighted-average cost per unit
     markup_percent REAL,                             -- NULL = use the site-wide default markup
+    supplier_id   INTEGER REFERENCES supplier(id),   -- usual/default supplier, editable
     active        INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
     created_by    INTEGER REFERENCES operator(id)
@@ -160,7 +174,8 @@ CREATE TABLE IF NOT EXISTS movement (
     unit          TEXT    NOT NULL,
     unit_cost     REAL,                              -- what was paid per unit (receipts only)
     location_id   INTEGER REFERENCES location(id),
-    supplier      TEXT,
+    supplier      TEXT,                              -- legacy free text; kept for pre-supplier-table history
+    supplier_id   INTEGER REFERENCES supplier(id),   -- receipts only, set alongside supplier (name at the time)
     reference     TEXT,                              -- delivery note / invoice number
     note          TEXT,
     operator_id   INTEGER NOT NULL REFERENCES operator(id),

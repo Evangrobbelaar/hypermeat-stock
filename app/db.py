@@ -64,6 +64,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Only safe to create now that the column above is guaranteed to exist —
     # see the comment in schema.sql for why this can't just live there.
     conn.execute("CREATE INDEX IF NOT EXISTS idx_movement_dispatch ON movement(dispatch_id)")
+    if "supplier_id" not in cols:
+        conn.execute("ALTER TABLE movement ADD COLUMN supplier_id INTEGER REFERENCES supplier(id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_movement_supplier ON movement(supplier_id)")
 
     product_cols = {row["name"] for row in conn.execute("PRAGMA table_info(product)").fetchall()}
     if "kind" not in product_cols:
@@ -72,6 +75,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE product ADD COLUMN cost_price REAL")
     if "markup_percent" not in product_cols:
         conn.execute("ALTER TABLE product ADD COLUMN markup_percent REAL")
+    if "supplier_id" not in product_cols:
+        conn.execute("ALTER TABLE product ADD COLUMN supplier_id INTEGER REFERENCES supplier(id)")
 
     float_product_cols = {row["name"] for row in conn.execute("PRAGMA table_info(float_product)").fetchall()}
     if "location" not in float_product_cols:

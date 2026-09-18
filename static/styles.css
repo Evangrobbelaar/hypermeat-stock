@@ -146,6 +146,15 @@ main{padding:var(--pad);padding-bottom:116px}
 }
 .qty.adjusted{color:var(--alert)}
 
+/* ---------- inline multi-field editor (Products: name/cost/supplier) ----------
+   The base .inline-editor above assumes one small fixed-width number input;
+   this variant holds several full-size fields, so it wraps instead of
+   overflowing on a narrow phone screen. */
+.inline-editor.wide{flex-wrap:wrap;align-items:stretch}
+.inline-editor.wide input,.inline-editor.wide select{
+  width:auto;flex:1 1 140px;height:44px;padding:0 10px;font-size:15px;
+}
+
 /* ---------- picked product ---------- */
 .picked{
   position:relative;background:var(--ink);color:#eef1f1;

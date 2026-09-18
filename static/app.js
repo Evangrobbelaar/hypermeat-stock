@@ -10,6 +10,7 @@ const state = {
   units: ["kg", "ea", "box", "crate", "pack", "l"],
   locations: [],
   products: [],
+  suppliers: [],
   floatProducts: [], // float_product rows: {id, name, location, target_quantity}
   onHand: {}, // product_id -> current on-hand, for stock take / dispatch comparisons
   unitPick: "kg",
@@ -268,8 +269,9 @@ async function enterApp() {
   $("#opName").textContent = state.operator.name;
   const meta = await api("/api/meta");
   state.units = meta.units;
-  await Promise.all([loadLocations(), loadProducts()]);
+  await Promise.all([loadLocations(), loadSuppliers(), loadProducts()]);
   drawUnits();
+  drawRecUnitPick();
   drawFloatLocationPick();
   drawLocKindPick();
   // Receive is the tab that's already active on first load, so unlike the
@@ -287,28 +289,187 @@ async function loadLocations() {
     .join("");
   $("#pLocation").innerHTML = opts;
   $("#locationPick").innerHTML = opts;
+  $("#recPLocation").innerHTML = opts;
 }
+
+/* ---------- suppliers ----------
+   One list feeds every place a supplier is picked: the Receive tab's
+   delivery-details dropdown, the inline "create product" panel, the
+   Products tab's own new-product form, and the per-product edit row. Each
+   consumer renders its own <option> markup because they differ slightly
+   (the Receive dropdown alone gets a "No supplier" + "+ Add new" pair). */
+function supplierOptionsPlain(selectedId) {
+  return state.suppliers
+    .map(
+      (s) =>
+        `<option value="${s.id}"${s.id === selectedId ? " selected" : ""}>${esc(s.name)}</option>`
+    )
+    .join("");
+}
+
+async function loadSuppliers() {
+  state.suppliers = await api("/api/suppliers");
+  const plain = `<option value="">No supplier</option>` + supplierOptionsPlain(null);
+  $("#pSupplier").innerHTML = plain;
+  $("#recPSupplier").innerHTML = plain;
+
+  const pickCurrent = $("#supplierPick").value;
+  $("#supplierPick").innerHTML =
+    `<option value="">No supplier</option>` +
+    supplierOptionsPlain(null) +
+    `<option value="__new__">+ Add new supplier&hellip;</option>`;
+  if (pickCurrent && pickCurrent !== "__new__") $("#supplierPick").value = pickCurrent;
+
+  $("#supplierList").innerHTML = state.suppliers.length
+    ? state.suppliers.map((s) => `<li><div class="row-main"><strong>${esc(s.name)}</strong></div></li>`).join("")
+    : `<li><span class="meta">None yet.</span></li>`;
+}
+
+// Set while a product's name/cost/supplier are being edited in place on the
+// Products tab — mirrors editingFloatTargetId/editingFloatUnitsId below, one
+// row open for editing at a time.
+let editingProductId = null;
 
 function renderProductRow(p) {
   const priceLine = p.cost_price != null
     ? `<span class="meta">Cost R${money(p.cost_price)}</span>`
     : "";
+  const supplierLine = p.supplier ? `<span class="meta">Supplier: ${esc(p.supplier)}</span>` : "";
+  const editing = editingProductId === p.id;
+  const editor = editing
+    ? `<div class="inline-editor wide">
+        <input id="editPName-${p.id}" value="${esc(p.name)}" placeholder="Name">
+        <input id="editPCost-${p.id}" type="number" step="0.01" min="0" inputmode="decimal"
+               value="${p.cost_price ?? ""}" placeholder="Cost price">
+        <select id="editPSupplier-${p.id}">
+          <option value="">No supplier</option>${supplierOptionsPlain(p.supplier_id)}
+        </select>
+        <button type="button" class="ghost small" data-save-product="${p.id}">Save</button>
+        <button type="button" class="ghost small" data-cancel-product="${p.id}">Cancel</button>
+      </div>`
+    : "";
   return `<li><div class="row-main"><strong>${esc(p.name)}</strong>
     <span class="meta">${esc(p.location || "No location")}${
       p.code ? " &middot; " + esc(p.code) : ""
-    }</span>${priceLine}</div>
+    }</span>${priceLine}${supplierLine}${editor}</div>
     <span class="qty">${esc(p.unit)}</span>
+    ${
+      editing
+        ? ""
+        : `<button type="button" class="ghost small" data-edit-product="${p.id}">Edit</button>
+           <button type="button" class="ghost small" data-deactivate-product="${p.id}">Remove</button>`
+    }
+    </li>`;
+}
+
+function renderInactiveProductRow(p) {
+  return `<li><div class="row-main"><strong>${esc(p.name)}</strong>
+    <span class="meta">${esc(p.location || "No location")}</span></div>
+    <span class="qty">${esc(p.unit)}</span>
+    <button type="button" class="ghost small" data-reactivate-product="${p.id}">Reactivate</button>
     </li>`;
 }
 
 async function loadProducts() {
-  state.products = await api("/api/products");
+  // include_inactive so the Products tab can show a "Deactivated" section
+  // with a way back — every other consumer of state.products (Receive's
+  // search, Dispatch, Stock take) still only ever sees the active ones.
+  const all = await api("/api/products?include_inactive=true");
+  state.products = all.filter((p) => p.active);
+  const inactive = all.filter((p) => !p.active);
+
   $("#noProducts").hidden = state.products.length > 0;
   drawResults($("#search").value);
   $("#productList").innerHTML = state.products.length
     ? state.products.map(renderProductRow).join("")
     : `<li><span class="meta">Nothing here yet.</span></li>`;
+  $("#inactiveProductList").innerHTML = inactive.length
+    ? inactive.map(renderInactiveProductRow).join("")
+    : `<li><span class="meta">None.</span></li>`;
 }
+
+$("#productList").addEventListener("click", async (e) => {
+  const editBtn = e.target.closest("button[data-edit-product]");
+  const cancelBtn = e.target.closest("button[data-cancel-product]");
+  const saveBtn = e.target.closest("button[data-save-product]");
+  const deactivateBtn = e.target.closest("button[data-deactivate-product]");
+
+  if (editBtn) {
+    editingProductId = Number(editBtn.dataset.editProduct);
+    loadProducts();
+    return;
+  }
+  if (cancelBtn) {
+    editingProductId = null;
+    loadProducts();
+    return;
+  }
+  if (saveBtn) {
+    const id = Number(saveBtn.dataset.saveProduct);
+    const name = $(`#editPName-${id}`).value.trim();
+    if (name.length < 2) {
+      toast("Name must be at least 2 characters.", true);
+      return;
+    }
+    const costRaw = $(`#editPCost-${id}`).value;
+    const supplierRaw = $(`#editPSupplier-${id}`).value;
+    saveBtn.disabled = true;
+    try {
+      await api(`/api/products/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name,
+          cost_price: costRaw === "" ? null : parseFloat(costRaw),
+          supplier_id: supplierRaw === "" ? null : Number(supplierRaw),
+        }),
+      });
+      editingProductId = null;
+      await loadProducts();
+      toast(`${name} updated.`);
+    } catch (err) {
+      toast(err.message, true);
+      saveBtn.disabled = false;
+    }
+    return;
+  }
+  if (deactivateBtn) {
+    const id = Number(deactivateBtn.dataset.deactivateProduct);
+    const p = state.products.find((x) => x.id === id);
+    if (!confirm(`Remove ${p ? p.name : "this product"}? Its history is kept — you can bring it back from Deactivated products.`)) {
+      return;
+    }
+    deactivateBtn.disabled = true;
+    try {
+      await api(`/api/products/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active: false }),
+      });
+      await loadProducts();
+      toast(`${p ? p.name : "Product"} removed.`);
+    } catch (err) {
+      toast(err.message, true);
+      deactivateBtn.disabled = false;
+    }
+  }
+});
+
+$("#inactiveProductList").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-reactivate-product]");
+  if (!btn) return;
+  const id = Number(btn.dataset.reactivateProduct);
+  btn.disabled = true;
+  try {
+    await api(`/api/products/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ active: true }),
+    });
+    await loadProducts();
+    toast("Product reactivated.");
+  } catch (err) {
+    toast(err.message, true);
+    btn.disabled = false;
+  }
+});
 
 /* ---------- product picking ---------- */
 // Rendering every matching row is fine at this catalog size — the cap here
@@ -348,7 +509,76 @@ $("#search").addEventListener("input", (e) => drawResults(e.target.value));
 
 $("#results").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-id]");
-  if (btn) pickReceiveProduct(Number(btn.dataset.id));
+  if (btn) {
+    closeRecNewProduct();
+    pickReceiveProduct(Number(btn.dataset.id));
+  }
+});
+
+/* ---------- create a new product without leaving Receive ----------
+   For when a delivery shows up for something that isn't in the system yet —
+   opens right where the search came up empty, creates the product, and
+   drops straight into the same qty step a normal pick would, so receiving
+   the actual delivery is never interrupted by a trip to the Products tab. */
+state.recUnitPick = "kg";
+
+function drawRecUnitPick() {
+  $("#recUnitPick").innerHTML = state.units
+    .map(
+      (u) => `<button type="button" data-u="${u}" class="${u === state.recUnitPick ? "on" : ""}">${u}</button>`
+    )
+    .join("");
+}
+
+$("#recUnitPick").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-u]");
+  if (!b) return;
+  state.recUnitPick = b.dataset.u;
+  drawRecUnitPick();
+});
+
+function openRecNewProduct() {
+  $("#recPName").value = $("#search").value.trim();
+  state.recUnitPick = "kg";
+  drawRecUnitPick();
+  $("#recPSupplier").value = "";
+  $("#recNewProductForm").hidden = false;
+  $("#recNewProductBtn").hidden = true;
+  $("#recPName").focus();
+}
+
+function closeRecNewProduct() {
+  $("#recNewProductForm").hidden = true;
+  $("#recNewProductBtn").hidden = false;
+}
+
+$("#recNewProductBtn").addEventListener("click", openRecNewProduct);
+$("#recNewProductCancel").addEventListener("click", closeRecNewProduct);
+
+$("#recNewProductForm").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") e.preventDefault();
+});
+
+$("#recNewProductForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("#recPName").value;
+  try {
+    const created = await api("/api/products", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        unit: state.recUnitPick,
+        location_id: Number($("#recPLocation").value) || null,
+        supplier_id: Number($("#recPSupplier").value) || null,
+      }),
+    });
+    toast(`${name} created.`);
+    closeRecNewProduct();
+    await loadProducts();
+    pickReceiveProduct(created.id);
+  } catch (err) {
+    toast(err.message, true);
+  }
 });
 
 /* ---------- shared quantity-keypad helper ----------
@@ -396,13 +626,50 @@ function resetReceive() {
   rec.pendingQty = "0";
   $("#search").value = "";
   drawResults("");
-  $("#supplier").value = "";
+  closeRecNewProduct();
+  $("#supplierPick").value = "";
+  $("#newSupplierRow").hidden = true;
+  $("#newSupplierName").value = "";
   $("#reference").value = "";
   $("#note").value = "";
   $("#unitCost").value = "";
   recPhoto.reset();
   renderReceive();
 }
+
+/* ---------- supplier picker (Receive tab) ---------- */
+$("#supplierPick").addEventListener("change", () => {
+  const isNew = $("#supplierPick").value === "__new__";
+  $("#newSupplierRow").hidden = !isNew;
+  if (isNew) $("#newSupplierName").focus();
+});
+
+$("#newSupplierCancel").addEventListener("click", () => {
+  $("#newSupplierRow").hidden = true;
+  $("#newSupplierName").value = "";
+  $("#supplierPick").value = "";
+});
+
+$("#newSupplierSave").addEventListener("click", async () => {
+  const name = $("#newSupplierName").value;
+  if (!name.trim()) {
+    toast("Enter a supplier name.", true);
+    return;
+  }
+  $("#newSupplierSave").disabled = true;
+  try {
+    const created = await api("/api/suppliers", { method: "POST", body: JSON.stringify({ name }) });
+    await loadSuppliers();
+    $("#supplierPick").value = String(created.id);
+    $("#newSupplierRow").hidden = true;
+    $("#newSupplierName").value = "";
+    toast(`${created.name} added.`);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    $("#newSupplierSave").disabled = false;
+  }
+});
 
 function renderReceive() {
   const inWizard = rec.mode !== "summary";
@@ -481,6 +748,7 @@ $("#recCancel").addEventListener("click", () => {
   rec.pending = null;
   rec.pendingQty = "0";
   rec.mode = "summary";
+  closeRecNewProduct();
   renderReceive();
 });
 
@@ -490,6 +758,7 @@ $("#recAddAnother").addEventListener("click", () => {
   rec.mode = "pick";
   $("#search").value = "";
   drawResults("");
+  closeRecNewProduct();
   renderReceive();
 });
 
@@ -530,7 +799,7 @@ $("#accept").addEventListener("click", async () => {
         location_id: it.location_id,
         unit_cost: it.unit_cost,
       })),
-      supplier: $("#supplier").value || null,
+      supplier_id: Number($("#supplierPick").value) || null,
       reference: $("#reference").value || null,
       note: $("#note").value || null,
       photo_id: recPhoto.getPhotoId(),
@@ -1759,13 +2028,33 @@ $("#productForm").addEventListener("submit", async (e) => {
         name: $("#pName").value,
         unit: state.unitPick,
         location_id: Number($("#pLocation").value) || null,
+        supplier_id: Number($("#pSupplier").value) || null,
         code: $("#pCode").value,
       }),
     });
     toast(`${$("#pName").value} created.`);
     $("#pName").value = "";
     $("#pCode").value = "";
+    $("#pSupplier").value = "";
     await loadProducts();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+/* ---------- suppliers (Products tab management) ---------- */
+$("#supplierForm").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") e.preventDefault();
+});
+
+$("#supplierForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("#newSupplierNameProducts").value;
+  try {
+    await api("/api/suppliers", { method: "POST", body: JSON.stringify({ name }) });
+    toast(`${name} added.`);
+    $("#newSupplierNameProducts").value = "";
+    await loadSuppliers();
   } catch (err) {
     toast(err.message, true);
   }

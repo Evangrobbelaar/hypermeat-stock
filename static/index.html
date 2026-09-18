@@ -57,8 +57,29 @@
           </label>
           <ul id="results" class="rows"></ul>
           <p class="empty" id="noProducts" hidden>
-            No products yet. Add the first one on the Products tab.
+            No products yet. Add the first one below, or on the Products tab.
           </p>
+          <button type="button" class="ghost bd-add" id="recNewProductBtn">+ Create new product</button>
+
+          <form id="recNewProductForm" class="panel" hidden autocomplete="off">
+            <h2>New product</h2>
+            <label class="field"><span>Title</span>
+              <input id="recPName" required placeholder="Beef brisket, whole">
+            </label>
+            <label class="field"><span>Unit of measure</span>
+              <div id="recUnitPick" class="chips"></div>
+            </label>
+            <label class="field"><span>Storage location</span>
+              <select id="recPLocation"></select>
+            </label>
+            <label class="field"><span>Usual supplier <em>optional</em></span>
+              <select id="recPSupplier"></select>
+            </label>
+            <div class="picked">
+              <button type="button" class="ghost small" id="recNewProductCancel">Cancel</button>
+              <button class="accept" type="submit">Create &amp; continue</button>
+            </div>
+          </form>
         </div>
 
         <div id="recQtyZone" hidden>
@@ -101,7 +122,17 @@
 
         <details class="extras">
           <summary>Delivery details</summary>
-          <label class="field"><span>Supplier</span><input id="supplier" autocomplete="off"></label>
+          <label class="field"><span>Supplier</span>
+            <select id="supplierPick">
+              <option value="">No supplier</option>
+              <option value="__new__">+ Add new supplier&hellip;</option>
+            </select>
+          </label>
+          <div class="inline-editor" id="newSupplierRow" hidden>
+            <input id="newSupplierName" placeholder="Supplier name" autocomplete="off">
+            <button type="button" class="ghost small" id="newSupplierSave">Add</button>
+            <button type="button" class="ghost small" id="newSupplierCancel">Cancel</button>
+          </div>
           <label class="field"><span>Delivery note number</span><input id="reference" autocomplete="off"></label>
           <label class="field"><span>Note</span><input id="note" autocomplete="off"></label>
         </details>
@@ -330,6 +361,9 @@
         <label class="field"><span>Storage location</span>
           <select id="pLocation"></select>
         </label>
+        <label class="field"><span>Usual supplier <em>optional</em></span>
+          <select id="pSupplier"></select>
+        </label>
         <label class="field"><span>Till code <em>optional</em></span>
           <input id="pCode" placeholder="Matches the weekly sales export">
         </label>
@@ -349,8 +383,25 @@
         </form>
       </details>
 
+      <details class="extras">
+        <summary>Suppliers</summary>
+        <form id="supplierForm" autocomplete="off">
+          <label class="field"><span>Name</span>
+            <input id="newSupplierNameProducts" placeholder="e.g. Karan Beef">
+          </label>
+          <button class="accept" type="submit">Add supplier</button>
+        </form>
+        <ul id="supplierList" class="rows"></ul>
+      </details>
+
       <h2 class="section-head">All products</h2>
       <ul id="productList" class="rows"></ul>
+
+      <details class="extras">
+        <summary>Deactivated products</summary>
+        <p class="meta">Removed from pick lists, but their history is kept. Reactivate to bring one back.</p>
+        <ul id="inactiveProductList" class="rows"></ul>
+      </details>
     </section>
 
     <!-- STOCK -->

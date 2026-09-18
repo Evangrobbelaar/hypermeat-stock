@@ -59,8 +59,17 @@ def _sanitize_for_json(obj):
     with allow_nan=False, so serializing THAT echo crashes with an unhandled
     500, turning a clean validation error into an outage. Recurse through the
     error payload and swap any non-finite float for its string form before it
-    ever reaches the JSON encoder."""
+    ever reaches the JSON encoder.
+
+    A @field_validator that raises plain ValueError(...) hits the same class
+    of problem from a different angle: pydantic tucks the exception object
+    itself into error["ctx"]["error"], and that's not JSON-serializable
+    either — every validator in this file that rejects a whitespace-only
+    string this way (name fields, across products/locations/suppliers/float
+    items) would otherwise turn a normal "that's blank" 422 into a 500."""
     if isinstance(obj, float) and not math.isfinite(obj):
+        return str(obj)
+    if isinstance(obj, BaseException):
         return str(obj)
     if isinstance(obj, dict):
         return {k: _sanitize_for_json(v) for k, v in obj.items()}
@@ -79,6 +88,16 @@ async def _security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
+    # The app shell and its JS/CSS have no cache-busting (no build step, no
+    # hashed filenames) and StaticFiles sets no Cache-Control of its own —
+    # left alone, browsers apply heuristic caching and a shared tablet that's
+    # rarely fully closed can sit on yesterday's app.js for a long time after
+    # a deploy. no-cache still lets the browser keep a local copy, it just
+    # has to revalidate via ETag on every load — a same-server 304 back, not
+    # a real refetch — so this trades a negligible round trip for every
+    # deploy actually reaching the tablet on its next reload.
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 
@@ -177,6 +196,7 @@ class ProductIn(BaseModel):
     location_id: Optional[int] = None
     code: Optional[str] = Field(default=None, max_length=40)
     kind: Literal["stock", "packaging"] = "stock"
+    supplier_id: Optional[int] = None
 
     @field_validator("name")
     @classmethod
@@ -184,6 +204,41 @@ class ProductIn(BaseModel):
         v = v.strip()
         if len(v) < 2:
             raise ValueError("Name must be at least 2 characters.")
+        return v
+
+
+class ProductPatchIn(BaseModel):
+    # Every field optional: a caller sends only what it wants to change.
+    # At least one has to be present (checked in the handler) — an empty
+    # patch is almost certainly a client bug, not a deliberate no-op.
+    name: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    cost_price: Optional[float] = _qty_field(default=None, ge=0)
+    supplier_id: Optional[int] = None
+    # Tri-state on purpose: absent (don't touch), True, or False. Setting a
+    # product's active flag to False is how "remove this product" works —
+    # its ledger history stays intact, it just drops out of the pick lists.
+    active: Optional[bool] = None
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if len(v) < 2:
+            raise ValueError("Name must be at least 2 characters.")
+        return v
+
+
+class SupplierIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 1:
+            raise ValueError("Name can't be blank.")
         return v
 
 
@@ -196,7 +251,12 @@ class ReceiptItem(BaseModel):
 
 class ReceiptIn(BaseModel):
     items: list[ReceiptItem] = Field(min_length=1)
+    # supplier (free text) predates supplier_id and still works on its own —
+    # a caller that only sends text gets the old behaviour untouched. When
+    # supplier_id is given the handler resolves it and uses that name
+    # instead, so the two never disagree on one receipt.
     supplier: Optional[str] = Field(default=None, max_length=200)
+    supplier_id: Optional[int] = None
     reference: Optional[str] = Field(default=None, max_length=200)
     note: Optional[str] = Field(default=None, max_length=1000)
     photo_id: Optional[int] = None
@@ -308,6 +368,22 @@ def _check_photo(conn: sqlite3.Connection, photo_id: Optional[int]) -> None:
         raise HTTPException(404, "That photo could not be found.")
 
 
+def _get_supplier_name(conn: sqlite3.Connection, supplier_id: Optional[int]) -> Optional[str]:
+    """Resolve a supplier_id to its current name, or 404 if it doesn't exist.
+
+    Mirrors _check_location — without this, an unknown id reaches the INSERT
+    and fails as a raw foreign-key violation instead of a plain message.
+    """
+    if supplier_id is None:
+        return None
+    row = conn.execute(
+        "SELECT name FROM supplier WHERE id = ? AND active = 1", (supplier_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "That supplier no longer exists.")
+    return row["name"]
+
+
 # ---------- health + meta -----------------------------------------------------
 
 @app.get("/healthz")
@@ -364,15 +440,20 @@ def create_location(body: LocationIn, op=Depends(current_operator)):
 def list_products(
     q: str = "",
     kind: Optional[Literal["stock", "packaging"]] = None,
+    include_inactive: bool = False,
     op=Depends(current_operator),
 ):
     conn = connect()
     try:
         sql = """SELECT p.id, p.code, p.name, p.unit, p.location_id, p.kind, p.cost_price,
-                         l.name AS location
-                 FROM product p LEFT JOIN location l ON l.id = p.location_id
-                 WHERE p.active = 1"""
+                         p.supplier_id, p.active, l.name AS location, sup.name AS supplier
+                 FROM product p
+                 LEFT JOIN location l ON l.id = p.location_id
+                 LEFT JOIN supplier sup ON sup.id = p.supplier_id
+                 WHERE 1=1"""
         args: list = []
+        if not include_inactive:
+            sql += " AND p.active = 1"
         if kind:
             sql += " AND p.kind = ?"
             args.append(kind)
@@ -393,15 +474,107 @@ def create_product(body: ProductIn, op=Depends(current_operator)):
     conn = connect()
     try:
         _check_location(conn, body.location_id)
+        _get_supplier_name(conn, body.supplier_id)  # validates existence; name unused here
         cur = conn.execute(
-            """INSERT INTO product (code, name, unit, location_id, created_by, kind)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (_clean(body.code), body.name.strip(), body.unit, body.location_id, op["id"], body.kind),
+            """INSERT INTO product (code, name, unit, location_id, created_by, kind, supplier_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                _clean(body.code),
+                body.name.strip(),
+                body.unit,
+                body.location_id,
+                op["id"],
+                body.kind,
+                body.supplier_id,
+            ),
         )
         conn.commit()
         return {"id": cur.lastrowid, "name": body.name.strip(), "unit": body.unit, "kind": body.kind}
     except sqlite3.IntegrityError:
         raise HTTPException(409, "That product code is already in use.")
+    finally:
+        conn.close()
+
+
+@app.patch("/api/products/{product_id}")
+def update_product(product_id: int, body: ProductPatchIn, op=Depends(current_operator)):
+    """Edit a product's name, cost price, default supplier, or active flag.
+
+    Deactivating is how "remove this product" works — its ledger history
+    (movements, breakdowns, dispatches it was ever part of) stays intact and
+    keeps referencing it; it just drops out of pick lists (list_products
+    filters to active=1 by default) and its stock_on_hand row disappears
+    (the view's WHERE p.active = 1). Reactivating brings it straight back
+    with that same history, nothing to restore.
+    """
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(422, "Nothing to update.")
+
+    conn = connect()
+    try:
+        product = conn.execute("SELECT * FROM product WHERE id = ?", (product_id,)).fetchone()
+        if not product:
+            raise HTTPException(404, "That product no longer exists.")
+
+        sets, args = [], []
+        if "name" in fields:
+            sets.append("name = ?")
+            args.append(fields["name"].strip())
+        if "cost_price" in fields:
+            sets.append("cost_price = ?")
+            args.append(fields["cost_price"])
+        if "supplier_id" in fields:
+            _get_supplier_name(conn, fields["supplier_id"])
+            sets.append("supplier_id = ?")
+            args.append(fields["supplier_id"])
+        if "active" in fields:
+            sets.append("active = ?")
+            args.append(1 if fields["active"] else 0)
+
+        args.append(product_id)
+        conn.execute(f"UPDATE product SET {', '.join(sets)} WHERE id = ?", args)
+        conn.commit()
+
+        updated = conn.execute(
+            """SELECT p.id, p.code, p.name, p.unit, p.location_id, p.kind, p.cost_price,
+                      p.supplier_id, p.active, l.name AS location, sup.name AS supplier
+               FROM product p
+               LEFT JOIN location l ON l.id = p.location_id
+               LEFT JOIN supplier sup ON sup.id = p.supplier_id
+               WHERE p.id = ?""",
+            (product_id,),
+        ).fetchone()
+        return dict(updated)
+    finally:
+        conn.close()
+
+
+# ---------- suppliers ---------------------------------------------------------
+
+@app.get("/api/suppliers")
+def list_suppliers(include_inactive: bool = False, op=Depends(current_operator)):
+    conn = connect()
+    try:
+        sql = "SELECT id, name, active FROM supplier"
+        if not include_inactive:
+            sql += " WHERE active = 1"
+        sql += " ORDER BY name"
+        rows = conn.execute(sql).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/suppliers", status_code=201)
+def create_supplier(body: SupplierIn, op=Depends(current_operator)):
+    conn = connect()
+    try:
+        cur = conn.execute("INSERT INTO supplier (name) VALUES (?)", (body.name,))
+        conn.commit()
+        return {"id": cur.lastrowid, "name": body.name}
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "That supplier is already in the list.")
     finally:
         conn.close()
 
@@ -473,6 +646,11 @@ def receive_stock(body: ReceiptIn, op=Depends(current_operator)):
     conn = connect()
     try:
         _check_photo(conn, body.photo_id)
+        # supplier_id, when given, is the source of truth for the name too —
+        # keeps the legacy free-text column populated for every existing
+        # reader (Log, /api/movements, old rows) without them needing to
+        # know supplier_id exists at all.
+        supplier_name = _get_supplier_name(conn, body.supplier_id) or _clean(body.supplier)
 
         # Resolve + validate every item up front, so a failure never leaves a
         # partial batch applied: nothing is inserted until every line checks
@@ -510,14 +688,15 @@ def receive_stock(body: ReceiptIn, op=Depends(current_operator)):
             cur = conn.execute(
                 """INSERT INTO movement
                    (product_id, direction, quantity, unit, location_id,
-                    supplier, reference, note, operator_id, device, unit_cost, photo_id)
-                   VALUES (?, 'IN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    supplier, supplier_id, reference, note, operator_id, device, unit_cost, photo_id)
+                   VALUES (?, 'IN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     product["id"],
                     item.quantity,
                     product["unit"],
                     item.location_id or product["location_id"],
-                    _clean(body.supplier),
+                    supplier_name,
+                    body.supplier_id,
                     _clean(body.reference),
                     _clean(body.note),
                     op["id"],
@@ -1246,13 +1425,21 @@ def analytics_summary(op=Depends(current_operator)):
         # Top suppliers by total value received. A receipt with no unit_cost
         # captured still counts toward receipt_count (it happened) but adds
         # nothing to total_value (its cost simply isn't known).
+        #
+        # Grouped by supplier_id where a receipt has one — stable even if the
+        # supplier is later renamed, unlike grouping by the free-text column,
+        # which would split "Beefcor" from a later-corrected "Beefcor Ltd".
+        # Receipts from before the supplier table existed have no
+        # supplier_id, so they fall back to grouping by their own text.
         supplier_rows = conn.execute(
-            """SELECT supplier,
+            """SELECT
+                      COALESCE(MAX(sup.name), MAX(m.supplier)) AS supplier,
                       COUNT(*) AS receipt_count,
-                      SUM(quantity * IFNULL(unit_cost, 0)) AS total_value
-               FROM movement
-               WHERE direction = 'IN' AND supplier IS NOT NULL
-               GROUP BY supplier
+                      SUM(m.quantity * IFNULL(m.unit_cost, 0)) AS total_value
+               FROM movement m
+               LEFT JOIN supplier sup ON sup.id = m.supplier_id
+               WHERE m.direction = 'IN' AND (m.supplier_id IS NOT NULL OR m.supplier IS NOT NULL)
+               GROUP BY m.supplier_id, CASE WHEN m.supplier_id IS NULL THEN m.supplier END
                ORDER BY total_value DESC
                LIMIT 10"""
         ).fetchall()

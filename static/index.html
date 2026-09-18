@@ -120,19 +120,20 @@
         <p class="empty" id="recNoItems">Nothing added yet.</p>
         <button id="recAddAnother" class="ghost bd-add">+ Add another product</button>
 
+        <label class="field"><span>Supplier</span>
+          <select id="supplierPick">
+            <option value="">No supplier</option>
+            <option value="__new__">+ Add new supplier&hellip;</option>
+          </select>
+        </label>
+        <div class="inline-editor" id="newSupplierRow" hidden>
+          <input id="newSupplierName" placeholder="Supplier name" autocomplete="off">
+          <button type="button" class="ghost small" id="newSupplierSave">Add</button>
+          <button type="button" class="ghost small" id="newSupplierCancel">Cancel</button>
+        </div>
+
         <details class="extras">
           <summary>Delivery details</summary>
-          <label class="field"><span>Supplier</span>
-            <select id="supplierPick">
-              <option value="">No supplier</option>
-              <option value="__new__">+ Add new supplier&hellip;</option>
-            </select>
-          </label>
-          <div class="inline-editor" id="newSupplierRow" hidden>
-            <input id="newSupplierName" placeholder="Supplier name" autocomplete="off">
-            <button type="button" class="ghost small" id="newSupplierSave">Add</button>
-            <button type="button" class="ghost small" id="newSupplierCancel">Cancel</button>
-          </div>
           <label class="field"><span>Delivery note number</span><input id="reference" autocomplete="off"></label>
           <label class="field"><span>Note</span><input id="note" autocomplete="off"></label>
         </details>

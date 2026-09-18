@@ -88,6 +88,16 @@ async def _security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
+    # The app shell and its JS/CSS have no cache-busting (no build step, no
+    # hashed filenames) and StaticFiles sets no Cache-Control of its own —
+    # left alone, browsers apply heuristic caching and a shared tablet that's
+    # rarely fully closed can sit on yesterday's app.js for a long time after
+    # a deploy. no-cache still lets the browser keep a local copy, it just
+    # has to revalidate via ETag on every load — a same-server 304 back, not
+    # a real refetch — so this trades a negligible round trip for every
+    # deploy actually reaching the tablet on its next reload.
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 

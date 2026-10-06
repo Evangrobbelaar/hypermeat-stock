@@ -138,6 +138,23 @@ main{padding:var(--pad);padding-bottom:116px}
   text-transform:uppercase;letter-spacing:.03em;color:var(--steel);
 }
 
+/* ---------- sheet entry (Stock take / Float typed in from the paper sheet) ---------- */
+.sheet-rows li{padding:10px var(--pad)}
+.sheet-rows label.row-main{cursor:text}
+.sheet-input{
+  width:96px;height:52px;padding:0 10px;text-align:right;
+  background:var(--panel);border:1px solid var(--line);border-radius:4px;font-size:22px;font-weight:600;
+}
+.sheet-input:focus{outline:3px solid var(--ink);outline-offset:1px;border-color:var(--ink)}
+.sheet-unit{width:44px;font-size:14px;color:var(--steel)}
+/* Save stays reachable without scrolling back down a long sheet. Pinned to
+   the very bottom and padded out underneath the fixed tab bar (which paints
+   over it), so no list row ever peeks through a gap whatever the bar's height. */
+.sheet-actions{
+  position:sticky;bottom:0;
+  padding:12px 0 calc(60px + env(safe-area-inset-bottom));background:var(--paper);
+}
+
 /* ---------- inline one-field editor (Dispatch actual-quantity, Float target) ---------- */
 .inline-editor{display:flex;align-items:center;gap:8px;margin-top:8px}
 .inline-editor input{

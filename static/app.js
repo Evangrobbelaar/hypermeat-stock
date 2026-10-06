@@ -1196,16 +1196,23 @@ $("#dispPrintBtn").addEventListener("click", () => {
   window.print();
 });
 
+// The stock count sheet's order — by location, then name. Shared by the
+// printout and the on-screen "Type in counts from sheet" list, so the person
+// typing the paper back in reads both top to bottom in lockstep.
+function sortForCountSheet(products) {
+  return [...products].sort((a, b) => {
+    const la = a.location || "";
+    const lb = b.location || "";
+    return la === lb ? a.name.localeCompare(b.name) : la.localeCompare(lb);
+  });
+}
+
 $("#stPrintBtn").addEventListener("click", async () => {
   try {
     // All active products, freshly fetched — this endpoint isn't pre-sorted
     // by location the way the dispatch detail one is, so sort client-side.
     const products = await api("/api/products");
-    const sorted = [...products].sort((a, b) => {
-      const la = a.location || "";
-      const lb = b.location || "";
-      return la === lb ? a.name.localeCompare(b.name) : la.localeCompare(lb);
-    });
+    const sorted = sortForCountSheet(products);
     const sections = [];
     let current = null;
     sorted.forEach((p) => {
@@ -1276,6 +1283,113 @@ $("#floatPrintPackBtn").addEventListener("click", () => {
 });
 
 /* ============================================================
+   Sheet entry — shared by Stock take and Float. Counting happens on
+   paper (see the print sheets above), and typing a returned sheet in
+   through the one-item pick -> keypad -> list loop cost five-plus taps
+   and a scroll per line. This lists every item in the printed sheet's
+   exact order with one number box each instead: type, Enter, type,
+   Enter. A blank box just means "not counted" and is left out of the
+   save. Typed values live in a {id: "text"} draft mirrored to
+   localStorage, so a tab switch, a reload or a save that fails on the
+   butchery's patchy WiFi never throws away what's already been typed.
+   ============================================================ */
+function loadSheetDraft(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function storeSheetDraft(key, draft) {
+  try {
+    localStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    // Storage blocked/full — the in-memory draft still works for this session.
+  }
+}
+
+function clearSheetDraft(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {}
+}
+
+// sections: [{location, items}]; each item renders as one labelled input.
+function sheetRowsHtml(sections, draft, { idPrefix, inputmode, unitOf, metaOf }) {
+  return sections
+    .map(
+      (section) =>
+        `<li class="list-section">${esc(section.location)}</li>` +
+        section.items
+          .map(
+            (it) => `<li><label class="row-main" for="${idPrefix}${it.id}"><strong>${esc(it.name)}</strong>
+        <span class="meta" data-meta="${it.id}">${metaOf(it, draft[it.id] ?? "")}</span></label>
+        <input class="sheet-input" id="${idPrefix}${it.id}" data-id="${it.id}" type="text"
+          inputmode="${inputmode}" enterkeyhint="next" autocomplete="off" value="${esc(draft[it.id] ?? "")}">
+        <span class="sheet-unit">${esc(unitOf(it))}</span></li>`
+          )
+          .join("")
+    )
+    .join("");
+}
+
+// Parses a sheet draft into [{id, qty}] for every non-blank line, or throws
+// with the offending input's id so the caller can put the cursor on it.
+function parseSheetDraft(draft, validIds, wholeOnly) {
+  const out = [];
+  for (const [id, raw] of Object.entries(draft)) {
+    const text = String(raw).trim().replace(",", ".");
+    if (text === "" || !validIds.has(Number(id))) continue;
+    const qty = Number(text);
+    if (!Number.isFinite(qty) || qty < 0 || (wholeOnly && !Number.isInteger(qty))) {
+      const err = new Error(
+        wholeOnly ? "Counts must be whole crates (0 or more)." : "Counts must be a number, 0 or more."
+      );
+      err.badId = id;
+      throw err;
+    }
+    out.push({ id: Number(id), qty });
+  }
+  return out;
+}
+
+// Enter/Next on one box jumps to the next; on the last box it lands on Save.
+// Centred so the box never ends up hidden behind the on-screen keyboard or
+// the sticky save bar.
+function wireSheetList(listEl, saveBtn, onInput) {
+  listEl.addEventListener("input", (e) => {
+    const input = e.target.closest(".sheet-input");
+    if (input) onInput(input);
+  });
+  listEl.addEventListener("keydown", (e) => {
+    const input = e.target.closest(".sheet-input");
+    if (!input || e.key !== "Enter") return;
+    e.preventDefault();
+    const all = Array.from(listEl.querySelectorAll(".sheet-input"));
+    const next = all[all.indexOf(input) + 1] || saveBtn;
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: "center" });
+  });
+}
+
+function focusSheetInput(listEl, id) {
+  const input = listEl.querySelector(`.sheet-input[data-id="${id}"]`);
+  if (!input) return;
+  input.focus({ preventScroll: true });
+  input.scrollIntoView({ block: "center" });
+}
+
+// Every mode switch in Stock take/Float swaps a long list for a short screen
+// (or back). The window keeps its old scroll offset across that swap, which
+// used to leave the keypad scrolled out of view above and force a scroll back
+// up on every single item — so any mode change starts back at the top.
+function scrollTopIfModeChanged(store, mode) {
+  if (store.lastShownMode !== mode) window.scrollTo(0, 0);
+  store.lastShownMode = mode;
+}
+
+/* ============================================================
    Stock take — reconcile what the system thinks is on hand with
    what's actually on the shelf. Same pick-then-keypad pattern as
    everywhere else: count one product, add it to the list, repeat,
@@ -1286,11 +1400,13 @@ $("#floatPrintPackBtn").addEventListener("click", () => {
    here afterward — the sheet is just a print of every product
    grouped by location with a blank to write the count on.
    ============================================================ */
+const ST_SHEET_KEY = "hm.stocktakeSheetDraft";
 const st = {
-  mode: "pick", // pick | qty | list
+  mode: "pick", // pick | qty | list | sheet
   pending: null,
   qty: "0",
   counts: [], // {product_id, name, unit, counted, was, adjustment}
+  sheet: loadSheetDraft(ST_SHEET_KEY), // product_id -> typed text, for sheet entry
 };
 
 async function loadOnHand() {
@@ -1313,9 +1429,11 @@ function renderStocktake() {
   // with state.products on every re-render, not just on a full reset.
   drawStResults($("#stSearch").value);
 
-  const inWizard = st.mode !== "list";
+  scrollTopIfModeChanged(st, st.mode);
+  const inWizard = st.mode === "pick" || st.mode === "qty";
   $("#stWizard").hidden = !inWizard;
-  $("#stList").hidden = inWizard;
+  $("#stList").hidden = st.mode !== "list";
+  $("#stSheet").hidden = st.mode !== "sheet";
   // Always available in the wizard, even before anything's been counted yet
   // — see the identical note on recCancelBar above for why.
   $("#stCancelBar").hidden = !inWizard;
@@ -1452,6 +1570,89 @@ $("#stFinish").addEventListener("click", async () => {
   }
 });
 
+/* ---------- stock take: sheet entry ---------- */
+function stSheetMeta(p, raw) {
+  const was = state.onHand[p.id] ?? 0;
+  const base = `System shows ${round(was)} ${esc(p.unit)}`;
+  const text = String(raw).trim().replace(",", ".");
+  const n = Number(text);
+  if (text === "" || !Number.isFinite(n) || n < 0) return base;
+  const diff = Math.round((n - was) * 1000) / 1000;
+  return `${base} &middot; <b>${diff === 0 ? "no change" : `${diff > 0 ? "+" : ""}${diff} ${esc(p.unit)}`}</b>`;
+}
+
+function stSheetProgress() {
+  const ids = new Set(state.products.map((p) => p.id));
+  const filled = Object.entries(st.sheet).filter(([id, v]) => ids.has(Number(id)) && String(v).trim() !== "").length;
+  $("#stSheetProgress").textContent = `${filled} of ${state.products.length} entered`;
+  $("#stSheetSave").disabled = filled === 0;
+}
+
+function drawStSheet() {
+  const sections = groupByFloatLocation(sortForCountSheet(state.products), (p) => p.location || "No location");
+  $("#stSheetList").innerHTML = sheetRowsHtml(sections, st.sheet, {
+    idPrefix: "stSheetIn-",
+    inputmode: "decimal",
+    unitOf: (p) => p.unit,
+    metaOf: stSheetMeta,
+  });
+  stSheetProgress();
+}
+
+$("#stSheetOpen").addEventListener("click", () => {
+  st.mode = "sheet";
+  renderStocktake();
+  drawStSheet();
+  $("#stSheetList .sheet-input")?.focus({ preventScroll: true });
+});
+
+$("#stSheetClose").addEventListener("click", () => {
+  st.mode = st.counts.length ? "list" : "pick";
+  renderStocktake();
+});
+
+wireSheetList($("#stSheetList"), $("#stSheetSave"), (input) => {
+  st.sheet[input.dataset.id] = input.value;
+  storeSheetDraft(ST_SHEET_KEY, st.sheet);
+  const p = state.products.find((x) => x.id === Number(input.dataset.id));
+  if (p) $(`#stSheetList [data-meta="${p.id}"]`).innerHTML = stSheetMeta(p, input.value);
+  stSheetProgress();
+});
+
+$("#stSheetSave").addEventListener("click", async () => {
+  let lines;
+  try {
+    lines = parseSheetDraft(st.sheet, new Set(state.products.map((p) => p.id)), false);
+  } catch (err) {
+    toast(err.message, true);
+    focusSheetInput($("#stSheetList"), err.badId);
+    return;
+  }
+  if (!lines.length) return;
+  const btn = $("#stSheetSave");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/stocktakes", {
+      method: "POST",
+      body: JSON.stringify({ counts: lines.map((l) => ({ product_id: l.id, counted_quantity: l.qty })) }),
+    });
+    const changed = r.results.filter((x) => x.adjustment !== 0).length;
+    toast(
+      `Stock take saved. ${r.results.length} product${
+        r.results.length === 1 ? "" : "s"
+      } counted, ${changed} adjusted.`
+    );
+    st.sheet = {};
+    clearSheetDraft(ST_SHEET_KEY);
+    await loadOnHand();
+    resetStocktake();
+  } catch (err) {
+    // Draft stays put — fix the problem (or wait for WiFi) and tap Save again.
+    toast(err.message, true);
+    btn.disabled = false;
+  }
+});
+
 /* ============================================================
    Float — packed items kept in the freezer overnight to restock
    shelves each morning (e.g. "Beef stew, 69-size tray"). Entirely
@@ -1465,8 +1666,10 @@ $("#stFinish").addEventListener("click", async () => {
    already exists today — comparing the count to each item's
    manager-set target level so staff know what to go pack more of.
    ============================================================ */
+const FLOAT_SHEET_KEY = "hm.floatSheetDraft";
 const float = {
-  mode: "init", // init | pick | qty | list | review — "init" is a sentinel
+  sheet: loadSheetDraft(FLOAT_SHEET_KEY), // float_product_id -> typed text, for sheet entry
+  mode: "init", // init | pick | qty | list | review | sheet — "init" is a sentinel
   // distinct from "pick" so the tab-entry handler below can tell "never
   // opened this tab this session" (decide review vs. picker for you) apart
   // from "operator is deliberately sitting on the picker" (leave them there).
@@ -1611,10 +1814,12 @@ function renderFloat() {
   drawFloatPickList();
   renderFloatProductList();
 
+  scrollTopIfModeChanged(float, float.mode);
   const inWizard = float.mode === "pick" || float.mode === "qty";
   $("#floatWizard").hidden = !inWizard;
   $("#floatList").hidden = float.mode !== "list";
   $("#floatReview").hidden = float.mode !== "review";
+  $("#floatSheet").hidden = float.mode !== "sheet";
   // Always available in the wizard, even before anything's been counted yet
   // — see the identical note on recCancelBar above for why.
   $("#floatCancelBar").hidden = !inWizard;
@@ -1791,6 +1996,85 @@ $("#floatFinish").addEventListener("click", async () => {
 });
 
 $("#floatReviewNew").addEventListener("click", resetFloatCount);
+
+/* ---------- float: sheet entry ---------- */
+function floatSheetMeta(p, raw) {
+  const target = p.target_quantity != null ? `Target ${crates(p.target_quantity)}` : "No target set";
+  const text = String(raw).trim();
+  const n = Number(text);
+  if (text === "" || !Number.isInteger(n) || n < 0 || p.target_quantity == null) return target;
+  const short = p.target_quantity - n;
+  return `${target} &middot; <b>${short > 0 ? `short ${crates(short)}` : "on target"}</b>`;
+}
+
+function floatSheetProgress() {
+  const ids = new Set(state.floatProducts.map((p) => p.id));
+  const filled = Object.entries(float.sheet).filter(([id, v]) => ids.has(Number(id)) && String(v).trim() !== "").length;
+  $("#floatSheetProgress").textContent = `${filled} of ${state.floatProducts.length} entered`;
+  $("#floatSheetSave").disabled = filled === 0;
+}
+
+function drawFloatSheet() {
+  // state.floatProducts arrives already location-sorted — the same order
+  // the float count sheet prints in.
+  const sections = groupByFloatLocation(state.floatProducts, (p) => p.location);
+  $("#floatSheetList").innerHTML = sheetRowsHtml(sections, float.sheet, {
+    idPrefix: "floatSheetIn-",
+    inputmode: "numeric",
+    unitOf: () => "crates",
+    metaOf: floatSheetMeta,
+  });
+  floatSheetProgress();
+}
+
+$("#floatSheetOpen").addEventListener("click", () => {
+  float.mode = "sheet";
+  renderFloat();
+  drawFloatSheet();
+  $("#floatSheetList .sheet-input")?.focus({ preventScroll: true });
+});
+
+$("#floatSheetClose").addEventListener("click", () => {
+  float.mode = float.counts.length ? "list" : "pick";
+  renderFloat();
+});
+
+wireSheetList($("#floatSheetList"), $("#floatSheetSave"), (input) => {
+  float.sheet[input.dataset.id] = input.value;
+  storeSheetDraft(FLOAT_SHEET_KEY, float.sheet);
+  const p = state.floatProducts.find((x) => x.id === Number(input.dataset.id));
+  if (p) $(`#floatSheetList [data-meta="${p.id}"]`).innerHTML = floatSheetMeta(p, input.value);
+  floatSheetProgress();
+});
+
+$("#floatSheetSave").addEventListener("click", async () => {
+  let lines;
+  try {
+    lines = parseSheetDraft(float.sheet, new Set(state.floatProducts.map((p) => p.id)), true);
+  } catch (err) {
+    toast(err.message, true);
+    focusSheetInput($("#floatSheetList"), err.badId);
+    return;
+  }
+  if (!lines.length) return;
+  const btn = $("#floatSheetSave");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/float-counts", {
+      method: "POST",
+      body: JSON.stringify({ counts: lines.map((l) => ({ float_product_id: l.id, counted_quantity: l.qty })) }),
+    });
+    toast(`Float count saved. ${r.items.length} item${r.items.length === 1 ? "" : "s"} counted.`);
+    float.sheet = {};
+    clearSheetDraft(FLOAT_SHEET_KEY);
+    resetFloatCount();
+    showFloatReview(r);
+    await loadFloatHistory();
+  } catch (err) {
+    toast(err.message, true);
+    btn.disabled = false;
+  }
+});
 
 /* ---------- manage float items (targets & crate size) ---------- */
 // Mirrors Dispatch's actual-quantity inline editor exactly: at most one
@@ -2367,6 +2651,9 @@ $$(".tabs button").forEach((b) =>
   b.addEventListener("click", async () => {
     $$(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + b.dataset.view));
+    // Otherwise the new tab opens at whatever offset the last one was
+    // scrolled to — often the bottom of a long list.
+    window.scrollTo(0, 0);
     try {
       if (b.dataset.view === "stock") await loadStock();
       if (b.dataset.view === "products") await loadProducts();
@@ -2386,6 +2673,7 @@ $$(".tabs button").forEach((b) =>
       if (b.dataset.view === "stocktake") {
         await Promise.all([loadProducts(), loadOnHand()]);
         renderStocktake();
+        if (st.mode === "sheet") drawStSheet();
       }
       if (b.dataset.view === "float") {
         // Same non-destructive reasoning as dispatch above: refresh float
@@ -2398,6 +2686,7 @@ $$(".tabs button").forEach((b) =>
           float.mode = float.review ? "review" : "pick";
         }
         renderFloat();
+        if (float.mode === "sheet") drawFloatSheet();
       }
       if (b.dataset.view === "analytics") await loadAnalytics();
     } catch (err) {
@@ -2410,4 +2699,7 @@ $$(".tabs button").forEach((b) =>
 );
 
 /* ---------- resume session ---------- */
+// The app re-renders everything itself on load, so the browser's own
+// restore-last-scroll-position on reload just lands somewhere arbitrary.
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 if (state.pin) submitPin(state.pin);

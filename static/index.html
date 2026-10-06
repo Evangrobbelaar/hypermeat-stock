@@ -235,6 +235,7 @@
 
         <div id="stPickZone">
           <button type="button" id="stPrintBtn" class="ghost bd-add">Print count sheet</button>
+          <button type="button" id="stSheetOpen" class="accept">Type in counts from sheet</button>
           <p class="section-head">What are you counting?</p>
           <label class="field">
             <span>Product</span>
@@ -268,6 +269,21 @@
         <button id="stAddAnother" class="ghost bd-add">+ Count another product</button>
         <button id="stFinish" class="accept" disabled>Finish stock take</button>
       </div>
+
+      <!-- Fast entry from the printed count sheet: every product on one screen,
+           in the same order as the paper, one number box each. -->
+      <div id="stSheet" hidden>
+        <div class="picked">
+          <button id="stSheetClose" class="ghost small">Back</button>
+          <strong>Enter count sheet</strong>
+          <span class="meta" id="stSheetProgress"></span>
+        </div>
+        <p class="meta">Same order as the printed sheet. Press Enter/Next to jump to the next line. Leave a line blank if it wasn't counted.</p>
+        <ul id="stSheetList" class="rows sheet-rows"></ul>
+        <div class="sheet-actions">
+          <button id="stSheetSave" class="accept" disabled>Save stock take</button>
+        </div>
+      </div>
     </section>
 
     <!-- FLOAT: packed items kept in the freezer overnight to restock shelves
@@ -283,6 +299,7 @@
 
         <div id="floatPickZone">
           <button type="button" id="floatPrintSheetBtn" class="ghost bd-add">Print count sheet</button>
+          <button type="button" id="floatSheetOpen" class="accept">Type in counts from sheet</button>
           <p class="section-head">What are you counting?</p>
           <ul id="floatPickList" class="rows"></ul>
           <p class="empty" id="floatNoProducts" hidden>
@@ -312,6 +329,20 @@
         <p class="empty" id="floatNoCounts" hidden>Nothing counted yet.</p>
         <button id="floatAddAnother" class="ghost bd-add">+ Count another item</button>
         <button id="floatFinish" class="accept" disabled>Finish count</button>
+      </div>
+
+      <!-- Fast entry from the printed float sheet — see #stSheet above. -->
+      <div id="floatSheet" hidden>
+        <div class="picked">
+          <button id="floatSheetClose" class="ghost small">Back</button>
+          <strong>Enter float sheet</strong>
+          <span class="meta" id="floatSheetProgress"></span>
+        </div>
+        <p class="meta">Crates, in the same order as the printed sheet. Press Enter/Next to jump to the next line. Leave a line blank if it wasn't counted.</p>
+        <ul id="floatSheetList" class="rows sheet-rows"></ul>
+        <div class="sheet-actions">
+          <button id="floatSheetSave" class="accept" disabled>Save float count</button>
+        </div>
       </div>
 
       <div id="floatReview" hidden>

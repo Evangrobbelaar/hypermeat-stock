@@ -279,6 +279,7 @@ async function enterApp() {
   // — without this, #recCancelBar stays stuck at its default-hidden markup
   // until the first pick or tab switch forces a re-render.
   renderReceive();
+  loadDeliveryHistory().catch((err) => toast(err.message, true));
   handleIntegrationRedirect();
 }
 
@@ -601,6 +602,7 @@ function applyQtyKey(cur, k) {
    then accept) — never forced through a separate "add another" step.
    ============================================================ */
 const rec = {
+  viewing: null, // a past delivery opened from history (GET /api/deliveries row), or null
   mode: "pick", // pick | qty | summary
   items: [], // {product_id, name, quantity, unit, location_id, unit_cost}
   pending: null,
@@ -672,14 +674,18 @@ $("#newSupplierSave").addEventListener("click", async () => {
 });
 
 function renderReceive() {
+  // A past delivery opened from history sits on top of the capture screens
+  // without touching rec.mode/rec.items, so Back returns to a delivery that
+  // was half-captured exactly as it was left.
+  $("#recDelivery").hidden = !rec.viewing;
   const inWizard = rec.mode !== "summary";
-  $("#recWizard").hidden = !inWizard;
-  $("#recSummary").hidden = inWizard;
+  $("#recWizard").hidden = !!rec.viewing || !inWizard;
+  $("#recSummary").hidden = !!rec.viewing || inWizard;
   // Always available while in the wizard, even before anything's been added
   // yet — Cancel just lands on the (possibly empty) summary, which is a
   // perfectly safe place to be. Without this, picking the wrong product on
   // the very first item left no way back except abandoning the tab.
-  $("#recCancelBar").hidden = !inWizard;
+  $("#recCancelBar").hidden = !!rec.viewing || !inWizard;
   $("#recPickZone").hidden = rec.mode !== "pick";
   $("#recQtyZone").hidden = rec.mode !== "qty";
 
@@ -789,6 +795,12 @@ function summarizeReceipt(items) {
 
 /* ---------- accept ---------- */
 $("#accept").addEventListener("click", async () => {
+  if (
+    !recPhoto.hasPhoto() &&
+    !window.confirm("No invoice photo attached. Accept this delivery without a photo?")
+  ) {
+    return;
+  }
   const btn = $("#accept");
   btn.disabled = true;
   try {
@@ -808,11 +820,167 @@ $("#accept").addEventListener("click", async () => {
     const r = await api("/api/receipts", { method: "POST", body: JSON.stringify(body) });
     toast(summarizeReceipt(r.items || []));
     resetReceive();
+    loadDeliveryHistory().catch(() => {}); // the delivery is saved; a failed list refresh isn't worth an error
   } catch (err) {
     toast(err.message, true);
     btn.disabled = false;
   }
 });
+
+/* ============================================================
+   Past deliveries — every delivery ever accepted, newest first,
+   each with its items and invoice photo. Photos are served only
+   with the operator PIN header, so they're fetched as a blob and
+   shown through an object URL rather than a plain <img src>. A
+   delivery accepted without a photo can have one added later
+   (fills the empty slot only; an existing photo is never replaced).
+   ============================================================ */
+let recHistoryLimit = 200;
+let recHistoryHasMore = false;
+let recHistoryRows = [];
+let recDeliveryPhotoUrl = null;
+
+async function loadDeliveryHistory() {
+  const rows = await api(`/api/deliveries?limit=${recHistoryLimit + 1}`);
+  recHistoryHasMore = rows.length > recHistoryLimit;
+  recHistoryRows = recHistoryHasMore ? rows.slice(0, recHistoryLimit) : rows;
+  if (!recHistoryRows.length) {
+    $("#recHistoryList").innerHTML = `<li><span class="meta">No deliveries yet.</span></li>`;
+    return;
+  }
+  const rowsHtml = recHistoryRows
+    .map(
+      (d) => `<li><button class="row" data-id="${d.id}">
+          <span class="row-main"><strong>${esc(d.supplier || "No supplier")}${
+        d.reference ? " &middot; " + esc(d.reference) : ""
+      }</strong>
+          <span class="meta">${esc(d.created_at)} &middot; ${esc(d.operator)} &middot; ${d.item_count} item${
+        d.item_count === 1 ? "" : "s"
+      } &middot; ${
+        d.photo_id != null
+          ? `<span class="badge-photo">Invoice photo</span>`
+          : `<span class="badge-nophoto">No photo</span>`
+      }</span></span></button></li>`
+    )
+    .join("");
+  const loadMore = recHistoryHasMore
+    ? `<li><button type="button" class="ghost bd-add" id="recHistoryLoadMore">Load more</button></li>`
+    : "";
+  $("#recHistoryList").innerHTML = rowsHtml + loadMore;
+}
+
+$("#recHistoryList").addEventListener("click", async (e) => {
+  const loadMoreBtn = e.target.closest("#recHistoryLoadMore");
+  if (loadMoreBtn) {
+    loadMoreBtn.disabled = true;
+    recHistoryLimit += 200;
+    await loadDeliveryHistory().catch((err) => toast(err.message, true));
+    return;
+  }
+  const btn = e.target.closest("button[data-id]");
+  if (!btn) return;
+  const d = recHistoryRows.find((x) => x.id === Number(btn.dataset.id));
+  if (d) showDelivery(d);
+});
+
+async function fetchPhotoUrl(photoId) {
+  const res = await fetch(`/api/photos/${photoId}`, { headers: { "X-Operator-Pin": state.pin } });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(errorMessage(body) || "Couldn't load that photo.");
+  }
+  return URL.createObjectURL(await res.blob());
+}
+
+function clearDeliveryPhoto() {
+  if (recDeliveryPhotoUrl) URL.revokeObjectURL(recDeliveryPhotoUrl);
+  recDeliveryPhotoUrl = null;
+  $("#recDeliveryImg").removeAttribute("src");
+  $("#recDeliveryImg").hidden = true;
+  $("#recDeliveryOpenFull").hidden = true;
+}
+
+async function showDelivery(d) {
+  rec.viewing = d;
+  recDelPhoto.reset();
+  clearDeliveryPhoto();
+  $("#recDeliveryTitle").textContent = d.supplier || "Delivery";
+  $("#recDeliveryMeta").textContent = [d.created_at, d.operator, d.reference && `Ref ${d.reference}`]
+    .filter(Boolean)
+    .join(" · ");
+  $("#recDeliveryItems").innerHTML =
+    d.items
+      .map(
+        (it) => `<li><div class="row-main"><strong class="${it.reversed ? "struck" : ""}">${esc(it.product)}</strong>
+        <span class="meta">${esc(it.location || "")}${
+          it.unit_cost != null ? ` &middot; R${money(it.unit_cost)}/${esc(it.unit)}` : ""
+        }${it.reversed ? " &middot; reversed" : ""}</span></div>
+        <span class="qty">+${round(it.quantity)}<span>${esc(it.unit)}</span></span></li>`
+      )
+      .join("") + (d.note ? `<li><span class="meta">Note: ${esc(d.note)}</span></li>` : "");
+  $("#recDeliveryAddPhoto").hidden = d.photo_id != null;
+  $("#recDeliveryPhotoStatus").textContent =
+    d.photo_id != null ? "Loading photo…" : "No invoice photo was taken for this delivery.";
+  renderReceive();
+  window.scrollTo(0, 0);
+  if (d.photo_id == null) return;
+  try {
+    const url = await fetchPhotoUrl(d.photo_id);
+    if (rec.viewing !== d) return URL.revokeObjectURL(url); // navigated away meanwhile
+    recDeliveryPhotoUrl = url;
+    $("#recDeliveryImg").src = url;
+    $("#recDeliveryImg").hidden = false;
+    $("#recDeliveryOpenFull").hidden = false;
+    $("#recDeliveryPhotoStatus").textContent = "";
+  } catch (err) {
+    $("#recDeliveryPhotoStatus").textContent = err.message;
+  }
+}
+
+// The app shell disables pinch-zoom (maximum-scale=1), so the full-size view
+// opens the image on its own in a new tab, where the browser lets it zoom.
+$("#recDeliveryOpenFull").addEventListener("click", () => {
+  if (recDeliveryPhotoUrl) window.open(recDeliveryPhotoUrl, "_blank");
+});
+$("#recDeliveryImg").addEventListener("click", () => {
+  if (recDeliveryPhotoUrl) window.open(recDeliveryPhotoUrl, "_blank");
+});
+
+$("#recDeliveryBack").addEventListener("click", () => {
+  rec.viewing = null;
+  clearDeliveryPhoto();
+  recDelPhoto.reset();
+  renderReceive();
+});
+
+// Adding a photo to a past delivery: the shared camera control uploads it
+// as soon as it's taken, then onChange attaches it to the delivery.
+const recDelPhoto = initCameraControl(
+  {
+    take: "recDelPhotoTake",
+    file: "recDelPhotoFile",
+    retake: "recDelPhotoRetake",
+    preview: "recDelPhotoPreview",
+    img: "recDelPhotoImg",
+    status: "recDelPhotoStatus",
+  },
+  async (photoId) => {
+    const d = rec.viewing;
+    if (photoId == null || !d) return;
+    try {
+      const updated = await api(`/api/deliveries/${d.id}/photo`, {
+        method: "POST",
+        body: JSON.stringify({ photo_id: photoId }),
+      });
+      toast("Invoice photo saved.");
+      await loadDeliveryHistory();
+      if (rec.viewing === d) showDelivery(updated);
+    } catch (err) {
+      toast(err.message, true);
+      $("#recDelPhotoStatus").textContent = "Couldn't save — tap Retake to try again.";
+    }
+  }
+);
 
 /* ============================================================
    Dispatch — send stock out for processing elsewhere. Nothing past
@@ -2658,7 +2826,7 @@ $$(".tabs button").forEach((b) =>
       if (b.dataset.view === "stock") await loadStock();
       if (b.dataset.view === "products") await loadProducts();
       if (b.dataset.view === "receive") {
-        await loadProducts();
+        await Promise.all([loadProducts(), loadDeliveryHistory()]);
         renderReceive();
       }
       if (b.dataset.view === "dispatch") {

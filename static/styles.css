@@ -207,6 +207,9 @@ main{padding:var(--pad);padding-bottom:116px}
 .camera{margin-bottom:14px}
 .camera-preview{display:flex;align-items:center;gap:12px;margin:10px 0}
 .camera-preview .thumb{max-width:120px;max-height:120px;border-radius:4px;border:1px solid var(--line);display:block}
+.invoice-photo{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:4px;background:var(--panel)}
+.badge-photo{color:var(--accept);font-weight:600}
+.badge-nophoto{color:var(--alert)}
 
 .toast{
   position:fixed;left:50%;bottom:96px;transform:translateX(-50%);

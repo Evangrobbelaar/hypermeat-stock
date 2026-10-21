@@ -151,6 +151,37 @@
 
         <button id="accept" class="accept" disabled>Accept delivery</button>
       </div>
+
+      <!-- A past delivery, opened from "Past deliveries" below: what came in
+           and its invoice photo. Shown in place of the capture screens
+           without clearing a delivery that's still being built. -->
+      <div id="recDelivery" hidden>
+        <div class="picked">
+          <button id="recDeliveryBack" class="ghost small">Back</button>
+          <strong id="recDeliveryTitle">Delivery</strong>
+          <span id="recDeliveryMeta" class="meta"></span>
+        </div>
+        <ul id="recDeliveryItems" class="rows"></ul>
+
+        <h2 class="section-head">Invoice photo</h2>
+        <div id="recDeliveryPhotoBox">
+          <p class="meta" id="recDeliveryPhotoStatus"></p>
+          <img id="recDeliveryImg" class="invoice-photo" alt="Invoice photo" hidden>
+          <button type="button" class="ghost bd-add" id="recDeliveryOpenFull" hidden>Open full size</button>
+        </div>
+        <div id="recDeliveryAddPhoto" class="camera" hidden>
+          <button type="button" class="ghost bd-add" id="recDelPhotoTake">Add invoice photo</button>
+          <div class="camera-preview" id="recDelPhotoPreview" hidden>
+            <img id="recDelPhotoImg" class="thumb" alt="Photo preview">
+            <button type="button" class="ghost small" id="recDelPhotoRetake">Retake</button>
+          </div>
+          <input type="file" accept="image/*" capture="environment" id="recDelPhotoFile" hidden>
+          <p class="meta" id="recDelPhotoStatus"></p>
+        </div>
+      </div>
+
+      <h2 class="section-head">Past deliveries</h2>
+      <ul id="recHistoryList" class="rows"></ul>
     </section>
 
     <!-- DISPATCH: send stock out for processing. Deducted the moment the

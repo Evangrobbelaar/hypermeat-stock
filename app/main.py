@@ -741,6 +741,118 @@ def receive_stock(body: ReceiptIn, op=Depends(current_operator)):
         conn.close()
 
 
+# ---------- past deliveries ---------------------------------------------------
+# A delivery has no row of its own: POST /api/receipts writes one movement per
+# line inside a single transaction. Those lines are therefore always
+# consecutive ids sharing the same operator/supplier/reference/note/photo/
+# device and timestamp (to the second, give or take), which is what groups
+# them back together here — no schema change, and it works for every
+# delivery ever captured, not just new ones.
+
+_DELIVERY_KEY = ("operator_id", "supplier", "supplier_id", "reference", "note", "photo_id", "device")
+
+
+def _delivery_groups(conn: sqlite3.Connection) -> list[list[sqlite3.Row]]:
+    rows = conn.execute(
+        """SELECT m.*, p.name AS product, o.name AS operator, l.name AS location,
+                  (SELECT COUNT(*) FROM movement r WHERE r.reverses_id = m.id) AS reversed
+           FROM movement m
+           JOIN product  p ON p.id = m.product_id
+           JOIN operator o ON o.id = m.operator_id
+           LEFT JOIN location l ON l.id = m.location_id
+           WHERE m.direction = 'IN' AND m.reverses_id IS NULL AND m.stocktake_id IS NULL
+             AND m.dispatch_id IS NULL AND m.breakdown_id IS NULL
+           ORDER BY m.id"""
+    ).fetchall()
+    groups: list[list[sqlite3.Row]] = []
+    prev = None
+    for r in rows:
+        same = (
+            prev is not None
+            and r["id"] == prev["id"] + 1
+            and all(r[k] == prev[k] for k in _DELIVERY_KEY)
+            and abs(
+                (datetime.fromisoformat(r["created_at"]) - datetime.fromisoformat(prev["created_at"])).total_seconds()
+            ) <= 2
+        )
+        if same:
+            groups[-1].append(r)
+        else:
+            groups.append([r])
+        prev = r
+    return groups
+
+
+def _delivery_dict(group: list[sqlite3.Row]) -> dict:
+    first = group[0]
+    return {
+        "id": first["id"],  # a delivery is addressed by its first movement's id
+        "created_at": first["created_at"],
+        "operator": first["operator"],
+        "supplier": first["supplier"],
+        "reference": first["reference"],
+        "note": first["note"],
+        "photo_id": first["photo_id"],
+        "item_count": len(group),
+        "items": [
+            {
+                "movement_id": r["id"],
+                "product": r["product"],
+                "quantity": r["quantity"],
+                "unit": r["unit"],
+                "unit_cost": r["unit_cost"],
+                "location": r["location"],
+                "reversed": r["reversed"] > 0,
+            }
+            for r in group
+        ],
+    }
+
+
+@app.get("/api/deliveries")
+def list_deliveries(limit: int = 200, op=Depends(current_operator)):
+    conn = connect()
+    try:
+        groups = _delivery_groups(conn)
+    finally:
+        conn.close()
+    newest_first = list(reversed(groups))[: max(1, min(limit, 5000))]
+    return [_delivery_dict(g) for g in newest_first]
+
+
+class DeliveryPhotoIn(BaseModel):
+    photo_id: int
+
+
+@app.post("/api/deliveries/{delivery_id}/photo")
+def attach_delivery_photo(delivery_id: int, body: DeliveryPhotoIn, op=Depends(current_operator)):
+    """Attach an invoice photo to a past delivery that was accepted without one.
+
+    Fills an empty slot only — a delivery that already has a photo keeps it,
+    so this can never overwrite or lose evidence. Quantities and every other
+    ledger column are untouched.
+    """
+    conn = connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _check_photo(conn, body.photo_id)
+        group = next((g for g in _delivery_groups(conn) if g[0]["id"] == delivery_id), None)
+        if group is None:
+            raise HTTPException(404, "That delivery could not be found.")
+        if group[0]["photo_id"] is not None:
+            raise HTTPException(409, "That delivery already has an invoice photo.")
+        ids = [r["id"] for r in group]
+        conn.execute(
+            f"UPDATE movement SET photo_id = ? WHERE photo_id IS NULL AND id IN ({','.join('?' * len(ids))})",
+            [body.photo_id, *ids],
+        )
+        conn.commit()
+        updated = next(g for g in _delivery_groups(conn) if g[0]["id"] == delivery_id)
+        return _delivery_dict(updated)
+    finally:
+        conn.close()
+
+
 @app.post("/api/reversals", status_code=201)
 def reverse_movement(body: ReversalIn, op=Depends(current_operator)):
     """Corrections never edit history — they post an opposing row."""

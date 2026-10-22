@@ -230,30 +230,41 @@ main{padding:var(--pad);padding-bottom:116px}
   .pin-dots.shake{animation:none}
 }
 
-/* ---------- print sheets (dispatch pick list / stock-take count sheet) ----------
+/* ---------- print sheets (pick list, count sheets, float pack list) ----------
    Never visible on screen — populated with print-formatted markup right
-   before window.print() is called, then hidden again once printing is done
-   (or cancelled) via the browser's afterprint event. */
+   before window.print() is called. Written for floor staff on paper: large
+   plain text, a "how to use this sheet" box, and obvious places to tick or
+   write. A long section is allowed to run over a page (the table heading
+   repeats); a single row never splits. */
 .print-sheet{display:none}
-.print-header{margin-bottom:20px}
-.print-header h1{margin:0 0 4px;font-size:22px}
-.print-header p{margin:0;color:#444;font-size:14px}
-.print-section{margin-bottom:22px;break-inside:avoid}
+.print-header{margin-bottom:14px}
+.print-header h1{margin:0 0 4px;font-size:24px}
+.print-header p{margin:0;color:#333;font-size:14px}
+.print-header .print-intro{margin-top:6px;font-size:15px;color:#000}
+.print-howto{border:2px solid #000;border-radius:4px;padding:10px 14px;margin-bottom:18px;font-size:14px}
+.print-howto ol{margin:6px 0 0;padding-left:20px}
+.print-howto li{margin:3px 0}
+.print-section{margin-bottom:20px}
 .print-section h2{
-  font-size:15px;margin:0 0 6px;padding-bottom:4px;
-  border-bottom:2px solid #000;
+  font-size:16px;margin:0 0 6px;padding-bottom:4px;
+  border-bottom:2px solid #000;break-after:avoid;
 }
-.print-table{width:100%;border-collapse:collapse;font-size:14px}
+.print-note{font-size:13px;margin:4px 0 8px}
+.print-table{width:100%;border-collapse:collapse;font-size:15px}
 .print-table th{
-  text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;
-  padding:4px 6px;border-bottom:1px solid #000;
+  text-align:left;font-size:12px;font-weight:700;
+  padding:5px 6px;border-bottom:1px solid #000;
 }
-.print-table td{padding:7px 6px;border-bottom:1px solid #ccc}
+.print-table td{padding:5px 6px;border-bottom:1px solid #bbb;vertical-align:middle}
 .print-table tr{break-inside:avoid}
-.print-blank{
-  display:inline-block;min-width:70px;border-bottom:1px solid #000;
-}
-.print-hint{color:#888;font-size:11px}
+.print-col-tick{width:48px;text-align:center}
+.print-col-unit{width:80px}
+.print-col-num{width:150px;white-space:nowrap}
+.print-col-write{width:170px}
+.print-box{display:inline-block;width:20px;height:20px;border:2px solid #000;border-radius:2px}
+.print-write{display:inline-block;width:110px;height:24px;border:1.5px solid #000;border-radius:3px}
+.print-big{font-size:20px;font-weight:700}
+.print-total{font-size:17px;margin:6px 0 10px}
 
 @media print{
   body>*:not(.print-sheet){display:none!important}

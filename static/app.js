@@ -1315,52 +1315,97 @@ $("#dispDetailBack").addEventListener("click", () => {
    visible via @media print (see styles.css), and is simply
    overwritten fresh each time any of these buttons is pressed —
    nothing needs cleaning up afterward.
+
+   These go to floor staff on paper, so every sheet follows the same
+   plain layout: a title that says what the sheet is for, a short
+   numbered "how to use this sheet" box, then simple tables whose
+   column headings say exactly what goes in them.
    ============================================================ */
-// extraColumnLabel/r.extraValueOrBlank add a 4th column when given — used by
-// Float's two sheets to give staff somewhere to actually write down how many
-// went in each crate, since that number varies and was never a fixed print
-// value to begin with. Dispatch and Stocktake don't pass it, so their sheets
-// keep the original 3 columns untouched.
-function renderPrintSheet(title, sections, extraColumnLabel) {
-  const today = new Date().toLocaleDateString();
-  const operatorName = state.operator ? state.operator.name : "";
-  const extraHeader = extraColumnLabel ? `<th>${esc(extraColumnLabel)}</th>` : "";
-  const sectionsHtml = sections
+const PRINT_BOX = `<span class="print-box"></span>`; // a square to tick
+const PRINT_WRITE = `<span class="print-write"></span>`; // a box to write a number in
+
+// doc: {title, intro?, steps: [string], sections: [{heading, note?, columns:
+// [{label, cls?}], rows: [[cellHtml, ...]]}], after?: html}. Cell HTML is
+// built by the caller, which escapes any data it puts in.
+function renderPrintDoc(doc) {
+  const today = new Date().toLocaleDateString(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const who = state.operator ? ` &middot; Printed by ${esc(state.operator.name)}` : "";
+  const steps = doc.steps.length
+    ? `<div class="print-howto"><strong>How to use this sheet</strong><ol>${doc.steps
+        .map((st) => `<li>${st}</li>`)
+        .join("")}</ol></div>`
+    : "";
+  const sections = doc.sections
     .map(
-      (sec) => `<div class="print-section"><h2>${esc(sec.location)}</h2>
+      (sec) => `<div class="print-section">
+        <h2>${esc(sec.heading)}</h2>${sec.note ? `<p class="print-note">${sec.note}</p>` : ""}
         <table class="print-table">
-          <thead><tr><th>Item</th><th>Unit</th><th>Qty</th>${extraHeader}</tr></thead>
+          <thead><tr>${sec.columns
+            .map((c) => `<th class="${c.cls || ""}">${esc(c.label)}</th>`)
+            .join("")}</tr></thead>
           <tbody>${sec.rows
             .map(
-              (r) =>
-                `<tr><td>${esc(r.name)}</td><td>${esc(r.unit)}</td><td>${r.valueOrBlank}</td>${
-                  extraColumnLabel ? `<td>${r.extraValueOrBlank ?? ""}</td>` : ""
-                }</tr>`
+              (row) =>
+                `<tr>${row.map((cell, i) => `<td class="${sec.columns[i].cls || ""}">${cell}</td>`).join("")}</tr>`
             )
             .join("")}</tbody>
         </table>
       </div>`
     )
     .join("");
-  return `<div class="print-header"><h1>${esc(title)}</h1><p>${esc(today)} &middot; ${esc(operatorName)}</p></div>${sectionsHtml}`;
+  return `<div class="print-header"><h1>${esc(doc.title)}</h1>
+      <p>${esc(today)}${who}</p>${doc.intro ? `<p class="print-intro">${doc.intro}</p>` : ""}</div>
+    ${steps}${sections}${doc.after || ""}`;
+}
+
+// Location-ordered items -> [{heading, items}] sections.
+function sectionsByLocation(items, locationOf) {
+  const out = [];
+  items.forEach((it) => {
+    const loc = locationOf(it) || "No location";
+    if (!out.length || out[out.length - 1].heading !== loc) out.push({ heading: loc, items: [] });
+    out[out.length - 1].items.push(it);
+  });
+  return out;
 }
 
 $("#dispPrintBtn").addEventListener("click", () => {
   if (!disp.detail) return;
-  // The detail response is already ordered by location, so a simple
-  // "did the location change since the last item" check while iterating
-  // is enough to start a new section — no need to re-sort.
-  const sections = [];
-  let current = null;
-  disp.detail.items.forEach((it) => {
-    const loc = it.location || "No location";
-    if (!current || current.location !== loc) {
-      current = { location: loc, rows: [] };
-      sections.push(current);
-    }
-    current.rows.push({ name: it.product, unit: it.unit, valueOrBlank: round(it.requested_quantity) });
+  // The detail response is already ordered by location (= where to go and
+  // fetch each item from), so sections just follow that order.
+  const sections = sectionsByLocation(disp.detail.items, (it) => it.location).map((sec) => ({
+    heading: `Take from: ${sec.heading}`,
+    columns: [
+      { label: "Done", cls: "print-col-tick" },
+      { label: "Product" },
+      { label: "Amount to take", cls: "print-col-num" },
+      { label: "Amount actually taken (only if different)", cls: "print-col-write" },
+    ],
+    rows: sec.items.map((it) => [
+      PRINT_BOX,
+      esc(it.product),
+      `<span class="print-big">${round(it.requested_quantity)}</span> ${esc(it.unit)}`,
+      PRINT_WRITE,
+    ]),
+  }));
+  $("#printSheet").innerHTML = renderPrintDoc({
+    title: `Pick list — Dispatch #${disp.detail.id}`,
+    intro: `${disp.detail.items.length} product${
+      disp.detail.items.length === 1 ? "" : "s"
+    } to take out of storage and send for processing.`,
+    steps: [
+      "Go to each storage area below and take out the amount shown for each product.",
+      "Tick the <b>Done</b> box once you have taken it.",
+      "If you could not take the full amount, write what you actually took in the last column.",
+      "Hand this sheet back so any different amounts can be corrected on the tablet.",
+    ],
+    sections,
   });
-  $("#printSheet").innerHTML = renderPrintSheet(`Dispatch #${disp.detail.id} pick list`, sections);
   window.print();
 });
 
@@ -1380,18 +1425,27 @@ $("#stPrintBtn").addEventListener("click", async () => {
     // All active products, freshly fetched — this endpoint isn't pre-sorted
     // by location the way the dispatch detail one is, so sort client-side.
     const products = await api("/api/products");
-    const sorted = sortForCountSheet(products);
-    const sections = [];
-    let current = null;
-    sorted.forEach((p) => {
-      const loc = p.location || "No location";
-      if (!current || current.location !== loc) {
-        current = { location: loc, rows: [] };
-        sections.push(current);
-      }
-      current.rows.push({ name: p.name, unit: p.unit, valueOrBlank: `<span class="print-blank">&nbsp;</span>` });
+    const sections = sectionsByLocation(sortForCountSheet(products), (p) => p.location).map((sec) => ({
+      heading: sec.heading,
+      columns: [
+        { label: "Product" },
+        { label: "Count in", cls: "print-col-unit" },
+        { label: "How many are there?", cls: "print-col-write" },
+      ],
+      rows: sec.items.map((p) => [esc(p.name), esc(p.unit), PRINT_WRITE]),
+    }));
+    $("#printSheet").innerHTML = renderPrintDoc({
+      title: "Stock count sheet",
+      intro: "Count what is physically in each storage area right now.",
+      steps: [
+        "Go to each storage area below and count every product on its list.",
+        "Count in the unit shown in <b>Count in</b>: <b>kg</b> = weigh it, <b>ea</b> = count each one, " +
+          "<b>box</b> / <b>crate</b> / <b>pack</b> = count full ones, <b>l</b> = litres.",
+        "Write the number in the box. Write <b>0</b> if there are none. Leave it empty only if you did not check.",
+        "Hand the sheet in. It is typed in on the tablet: Stock take &rarr; <b>Type in counts from sheet</b>.",
+      ],
+      sections,
     });
-    $("#printSheet").innerHTML = renderPrintSheet("Stock count sheet", sections);
     window.print();
   } catch (err) {
     toast(err.message, true);
@@ -1402,51 +1456,92 @@ $("#floatPrintSheetBtn").addEventListener("click", () => {
   // state.floatProducts is already fresh — loaded on every Float tab entry
   // and re-fetched after every add/edit in "Manage float items" below — so
   // no need for a fetch of its own here, same reasoning as dispPrintBtn.
-  const sections = groupByFloatLocation(state.floatProducts, (p) => p.location).map((section) => ({
-    location: section.location,
-    rows: section.items.map((p) => ({
-      name: p.name,
-      unit: "crates",
-      valueOrBlank: `<span class="print-blank">&nbsp;</span>`,
-      // A blank line to write in, not a fixed printed number — how many
-      // actually go in a crate varies pack to pack. Where a usual figure is
-      // on file it's shown as a light reference, never as the value itself.
-      extraValueOrBlank:
-        `<span class="print-blank">&nbsp;</span>` +
-        (p.units_per_crate != null
-          ? `<br><span class="print-hint">usually ${p.units_per_crate}</span>`
-          : ""),
-    })),
+  const sections = sectionsByLocation(state.floatProducts, (p) => p.location).map((sec) => ({
+    heading: sec.heading,
+    columns: [
+      { label: "Product" },
+      { label: "Full crates counted", cls: "print-col-write" },
+    ],
+    rows: sec.items.map((p) => [esc(p.name), PRINT_WRITE]),
   }));
-  $("#printSheet").innerHTML = renderPrintSheet("Float count sheet", sections, "Items/crate");
+  $("#printSheet").innerHTML = renderPrintDoc({
+    title: "Float count sheet",
+    intro: "Morning count of the packed crates kept in the freezers.",
+    steps: [
+      "Go to each freezer below and count the <b>crates</b> of each product (not the packs inside them).",
+      "Write the number of crates in the box. Write <b>0</b> if there are none.",
+      "Hand the sheet in. It is typed in on the tablet: Float &rarr; <b>Type in counts from sheet</b>.",
+      "The tablet then works out how many crates of each product need to be packed today.",
+    ],
+    sections,
+  });
   window.print();
 });
 
 $("#floatPrintPackBtn").addEventListener("click", () => {
   if (!float.review) return;
-  // The point of this printout is "what to go pack more of", so it shows
-  // shortfall, not the raw count. An item with no target has no shortfall
-  // to show — rather than leave that line blank or drop it, show the
-  // counted quantity with a clear "(no target)" label so it's still there,
-  // just obviously informational rather than a number to act on.
-  const sections = groupByFloatLocation(float.review.items, (it) => it.location).map((section) => ({
-    location: section.location,
-    rows: section.items.map((it) => ({
-      name: it.product,
-      unit: "crates",
-      valueOrBlank:
-        it.shortfall != null
-          ? String(round(it.shortfall)) +
-            (it.shortfall_items != null ? ` (est. ${round(it.shortfall_items)} items)` : "")
-          : `${round(it.counted_quantity)} (no target)` +
-            (it.counted_items != null ? ` &middot; est. ${round(it.counted_items)} items` : ""),
-      // A blank line for whoever packs it to record what actually went into
-      // each crate — the estimate above is only ever a reference, since the
-      // real figure changes pack to pack and was never meant to be fixed.
-      extraValueOrBlank: `<span class="print-blank">&nbsp;</span>`,
-    })),
+  // One job only: how many crates of each product to pack today. Lines
+  // that need nothing are left off the main list (just summarised below it)
+  // so the list is exactly the work to be done.
+  const items = float.review.items;
+  const toPack = items.filter((it) => it.shortfall != null && it.shortfall > 0);
+  const noTarget = items.filter((it) => it.target_quantity == null);
+  const full = items.length - toPack.length - noTarget.length;
+  const total = toPack.reduce((sum, it) => sum + it.shortfall, 0);
+
+  const sections = sectionsByLocation(toPack, (it) => it.location).map((sec) => ({
+    heading: `Put in: ${sec.heading}`,
+    columns: [
+      { label: "Done", cls: "print-col-tick" },
+      { label: "Product" },
+      { label: "Crates to pack", cls: "print-col-num" },
+    ],
+    rows: sec.items.map((it) => [
+      PRINT_BOX,
+      esc(it.product),
+      `<span class="print-big">${round(it.shortfall)}</span> crate${it.shortfall === 1 ? "" : "s"}`,
+    ]),
   }));
-  $("#printSheet").innerHTML = renderPrintSheet("Float pack list", sections, "Items/crate packed");
+
+  let after = "";
+  if (toPack.length) {
+    after += `<p class="print-total">Total to pack today: <b>${crates(total)}</b></p>`;
+  } else {
+    after += `<p class="print-total"><b>Nothing to pack today</b> — every product is already at its target.</p>`;
+  }
+  if (full > 0) {
+    after += `<p class="print-note">${full} other product${full === 1 ? " is" : "s are"} already full — nothing to pack for ${
+      full === 1 ? "it" : "them"
+    }.</p>`;
+  }
+  if (noTarget.length) {
+    after += `<p class="print-note"><b>No target set — ask the manager whether to pack:</b> ${noTarget
+      .map((it) => esc(it.product))
+      .join(", ")}.</p>`;
+  }
+
+  $("#printSheet").innerHTML = renderPrintDoc({
+    title: "Float pack list — crates to pack today",
+    // created_at is stored in UTC; shown in the tablet's own (shop) local time.
+    intro: `Based on the float count taken ${esc(
+      new Date(float.review.created_at.replace(" ", "T") + "Z").toLocaleString(undefined, {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    )}.`,
+    steps: toPack.length
+      ? [
+          "Each line below is a product that is <b>below its target</b> in the freezer.",
+          "Pack the number of <b>crates</b> shown for that product.",
+          "Put the crates in the freezer named in the heading, then tick <b>Done</b>.",
+        ]
+      : [],
+    sections,
+    after,
+  });
   window.print();
 });
 

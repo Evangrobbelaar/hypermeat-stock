@@ -1402,7 +1402,7 @@ $("#dispPrintBtn").addEventListener("click", () => {
       "Go to each storage area below and take out the amount shown for each product.",
       "Tick the <b>Done</b> box once you have taken it.",
       "If you could not take the full amount, write what you actually took in the last column.",
-      "Hand this sheet back so any different amounts can be corrected on the tablet.",
+      "Hand this sheet back to the office so any different amounts can be corrected in the system.",
     ],
     sections,
   });
@@ -1442,7 +1442,7 @@ $("#stPrintBtn").addEventListener("click", async () => {
         "Count in the unit shown in <b>Count in</b>: <b>kg</b> = weigh it, <b>ea</b> = count each one, " +
           "<b>box</b> / <b>crate</b> / <b>pack</b> = count full ones, <b>l</b> = litres.",
         "Write the number in the box. Write <b>0</b> if there are none. Leave it empty only if you did not check.",
-        "Hand the sheet in. It is typed in on the tablet: Stock take &rarr; <b>Type in counts from sheet</b>.",
+        "Hand the sheet in. It is typed into the system: Stock take &rarr; <b>Type in counts from sheet</b>.",
       ],
       sections,
     });
@@ -1470,8 +1470,8 @@ $("#floatPrintSheetBtn").addEventListener("click", () => {
     steps: [
       "Go to each freezer below and count the <b>crates</b> of each product (not the packs inside them).",
       "Write the number of crates in the box. Write <b>0</b> if there are none.",
-      "Hand the sheet in. It is typed in on the tablet: Float &rarr; <b>Type in counts from sheet</b>.",
-      "The tablet then works out how many crates of each product need to be packed today.",
+      "Hand the sheet to the office. It is typed in on the office computer: Float &rarr; <b>Type in counts from sheet</b>.",
+      "The system then works out how many crates of each product need to be packed today.",
     ],
     sections,
   });
@@ -1522,7 +1522,7 @@ $("#floatPrintPackBtn").addEventListener("click", () => {
 
   $("#printSheet").innerHTML = renderPrintDoc({
     title: "Float pack list — crates to pack today",
-    // created_at is stored in UTC; shown in the tablet's own (shop) local time.
+    // created_at is stored in UTC; shown in the device's own (shop) local time.
     intro: `Based on the float count taken ${esc(
       new Date(float.review.created_at.replace(" ", "T") + "Z").toLocaleString(undefined, {
         weekday: "long",

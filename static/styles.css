@@ -2,13 +2,14 @@
   --paper:#e6e9e9;
   --panel:#fff;
   --ink:#14181a;
-  --steel:#5d686e;
-  --line:#c2c8ca;
+  --steel:#434d52;
+  --line:#a9b1b4;
   --accept:#15694a;
   --accept-press:#0f5138;
   --alert:#9e2a1f;
   --tap:64px;
   --pad:16px;
+  --tabs-h:58px;                                 /* bottom tab bar, excluding safe area */
   font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   font-variant-numeric:tabular-nums;
 }
@@ -34,9 +35,9 @@ button{cursor:pointer}
   display:grid;place-items:center;padding:var(--pad);
 }
 .gate-inner{width:min(420px,100%);text-align:center}
-.gate-site{margin:0;color:#8fa0a6;font-size:15px;letter-spacing:.02em}
+.gate-site{margin:0;color:#b3c0c5;font-size:15px;letter-spacing:.02em}
 .gate-title{margin:2px 0 6px;font-size:34px;font-weight:650;letter-spacing:-.02em}
-.gate-hint{margin:0 0 26px;color:#8fa0a6;font-size:15px}
+.gate-hint{margin:0 0 26px;color:#b3c0c5;font-size:16px}
 .pin-dots{display:flex;gap:14px;justify-content:center;margin-bottom:22px}
 .pin-dots i{width:15px;height:15px;border:2px solid #6d7d84;border-radius:50%;display:block;transition:background .1s,border-color .1s}
 .pin-dots i.on{background:#eef1f1;border-color:#eef1f1}
@@ -71,34 +72,44 @@ button{cursor:pointer}
   padding:10px var(--pad);background:var(--ink);color:#eef1f1;
   padding-top:calc(10px + env(safe-area-inset-top));
 }
-.bar-label{display:block;font-size:12px;color:#8fa0a6}
-.bar strong{font-size:17px;font-weight:600}
+.bar-label{display:block;font-size:13px;color:#b3c0c5}
+.bar strong{font-size:18px;font-weight:650}
 .bar-actions{display:flex;align-items:center;gap:8px}
+/* 2px outline (1px less padding to keep the same size) so secondary buttons
+   still read as buttons on a bright screen. */
 .ghost{
-  background:none;border:1px solid currentColor;border-radius:4px;
-  padding:9px 14px;font-size:15px;
+  background:none;border:2px solid currentColor;border-radius:4px;
+  padding:8px 13px;font-size:15px;font-weight:600;
 }
-.ghost.small{padding:6px 10px;font-size:14px}
+.ghost.small{padding:5px 9px;font-size:14px}
 
 main{padding:var(--pad);padding-bottom:116px}
 .view{max-width:640px;margin:0 auto}
-.section-head{font-size:14px;font-weight:600;color:var(--steel);margin:26px 0 8px}
+.section-head{font-size:15px;font-weight:650;color:var(--steel);margin:26px 0 8px}
 
+/* Bottom tab bar: same seven tabs in the same order, made readable at a
+   glance — dark labels, a solid dark block behind the open tab, and thin
+   dividers so each tab reads as its own button. Label size steps up with
+   screen width (see the media queries below). */
 .tabs{
   position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(7,1fr);
-  background:var(--panel);border-top:1px solid var(--line);
+  background:var(--panel);border-top:2px solid var(--ink);
+  box-shadow:0 -2px 8px rgba(20,24,26,.12);
   padding-bottom:env(safe-area-inset-bottom);
 }
 .tabs button{
-  background:none;border:0;padding:12px 1px;font-size:10px;line-height:1.2;color:var(--steel);
-  border-top:3px solid transparent;margin-top:-1px;
+  min-height:var(--tabs-h);min-width:0;
+  background:none;border:0;border-left:1px solid var(--line);
+  padding:6px 1px;font-size:11px;font-weight:600;line-height:1.15;color:var(--ink);
 }
-.tabs button.on{color:var(--ink);font-weight:600;border-top-color:var(--ink)}
+.tabs button:first-child{border-left:0}
+.tabs button:hover{background:#eef1f1}
+.tabs button.on{background:var(--ink);color:#fff;font-weight:700;box-shadow:inset 0 4px 0 var(--accept)}
 
 /* ---------- fields ---------- */
 .field{display:block;margin-bottom:14px}
-.field>span{display:block;font-size:14px;color:var(--steel);margin-bottom:6px}
-.field em{font-style:normal;color:var(--line)}
+.field>span{display:block;font-size:15px;font-weight:500;color:var(--steel);margin-bottom:6px}
+.field em{font-style:normal;font-weight:400;color:#6b767b}
 .field input,.field select{
   width:100%;height:52px;padding:0 12px;
   background:var(--panel);border:1px solid var(--line);border-radius:4px;
@@ -126,7 +137,7 @@ main{padding:var(--pad);padding-bottom:116px}
 .rows button.row:active{background:#eff2f2}
 .row-main{flex:1;min-width:0}
 .row-main strong{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.meta{display:block;font-size:14px;color:var(--steel)}
+.meta{display:block;font-size:15px;color:var(--steel)}
 .qty{font-size:21px;font-weight:650;white-space:nowrap}
 .qty span{font-size:14px;font-weight:500;color:var(--steel);margin-left:3px}
 .struck{text-decoration:line-through;color:var(--steel)}
@@ -152,7 +163,7 @@ main{padding:var(--pad);padding-bottom:116px}
    over it), so no list row ever peeks through a gap whatever the bar's height. */
 .sheet-actions{
   position:sticky;bottom:0;
-  padding:12px 0 calc(60px + env(safe-area-inset-bottom));background:var(--paper);
+  padding:12px 0 calc(var(--tabs-h) + 22px + env(safe-area-inset-bottom));background:var(--paper);
 }
 
 /* ---------- inline one-field editor (Dispatch actual-quantity, Float target) ---------- */
@@ -178,7 +189,7 @@ main{padding:var(--pad);padding-bottom:116px}
   border-radius:4px;padding:14px 88px 14px var(--pad);margin-bottom:16px;
 }
 .picked strong{display:block;font-size:19px;font-weight:600}
-.picked .meta{color:#8fa0a6}
+.picked .meta{color:#b3c0c5}
 .picked .ghost{position:absolute;right:12px;top:50%;transform:translateY(-50%)}
 
 /* ---------- scale readout ---------- */
@@ -191,7 +202,7 @@ main{padding:var(--pad);padding-bottom:116px}
 .readout-unit{font-size:20px;color:var(--steel)}
 
 .extras{margin:14px 0;border-top:1px solid var(--line);padding-top:12px}
-.extras summary{color:var(--steel);font-size:15px;padding:8px 0}
+.extras summary{color:var(--ink);font-size:16px;font-weight:600;padding:8px 0}
 .extras[open] summary{margin-bottom:10px}
 
 .accept{
@@ -199,7 +210,7 @@ main{padding:var(--pad);padding-bottom:116px}
   background:var(--accept);color:#fff;font-size:19px;font-weight:650;
 }
 .accept:active{background:var(--accept-press)}
-.accept:disabled{background:#b4bcbe;color:#eef1f1}
+.accept:disabled{background:#c3cacc;color:#4f5a5f}
 
 .bd-add{width:100%;height:52px;margin:14px 0}
 
@@ -218,9 +229,19 @@ main{padding:var(--pad);padding-bottom:116px}
 }
 .toast.bad{background:var(--alert)}
 
+@media (min-width:380px){
+  .tabs button{font-size:12px}
+}
+@media (min-width:420px){
+  .tabs button{font-size:13px}
+}
+@media (min-width:560px){
+  .tabs button{font-size:15px}
+}
 @media (min-width:720px){
-  :root{--tap:72px}
+  :root{--tap:72px;--tabs-h:64px}
   .readout output{font-size:68px}
+  .tabs button{font-size:17px}
 }
 @media (prefers-reduced-motion:no-preference){
   .toast{animation:rise .16s ease-out}
